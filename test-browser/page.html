@@ -1,0 +1,26 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>tile browser test</title>
+<style>
+  body { margin: 0; padding: 20px; font: 16px sans-serif; }
+  ax-tile { display: block; width: 200px; height: 100px; margin: 0 0 20px; }
+  /* Content above the action must be positioned above it to take the pointer. */
+  .above { position: relative; z-index: 2; }
+</style></head>
+<body>
+<button id="tab-start">Start</button>
+<ax-tile id="link" layers="fill reveal"><a slot="action" href="#target">Name</a></ax-tile>
+<form id="form"><ax-tile id="form-tile" layers="fill reveal"><button slot="action" type="submit">Send</button></ax-tile></form>
+<ax-tile id="blank" layers="fill reveal"><a slot="action" href="about:blank" target="_blank">Blank</a></ax-tile>
+<ax-tile id="immediate" activation="immediate" layers="fill reveal"><a slot="action" href="#immediate-target">Now</a></ax-tile>
+<ax-tile id="capped" layers="fill reveal" style="--ax-tile-activation-delay-max: 50ms; --reveal-press-animation-speed: 8000"><a slot="action" href="#capped-target">Capped</a></ax-tile>
+<ax-tile id="plain" layers="fill"><a slot="action" href="#plain-target">Plain</a></ax-tile>
+<ax-tile id="modifiers" layers="fill reveal"><a slot="action" href="about:blank" target="_blank">Modifiers</a></ax-tile>
+<ax-tile id="taken" layers="fill reveal"><a slot="action" href="#taken-target">Taken</a></ax-tile>
+<ax-tile id="extra" layers="fill reveal"><button id="extra-btn" class="above">Extra</button><a slot="action" href="#extra-target">Open</a></ax-tile>
+<ax-tile id="static" layers="fill reveal"><span>Static</span></ax-tile>
+<ax-tile id="hidden" label="hidden" layers="fill"><a id="hidden-a" slot="action" href="#hidden-target">Hidden name</a></ax-tile>
+<ax-tile id="focus" layers="fill reveal"><a id="focus-a" slot="action" href="#focus-target">Focus</a></ax-tile>
+<ax-tile id="native" focus-ring="native" layers="fill"><a id="native-a" slot="action" href="#native-target">Native</a></ax-tile>
+<ax-tile id="keys-link" layers="fill reveal"><a id="keys-link-a" slot="action" href="#keys-link-target">Link</a></ax-tile>
+<script type="module" src="./page.ts"></script>
+</body></html>
