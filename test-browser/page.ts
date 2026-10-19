@@ -390,16 +390,258 @@ async function reducedChecks() {
     check('reduced motion: the click passes synchronously', location.hash === '#plain-target' && heldSince(mark, 'plain').length === 1, `hash ${location.hash}`);
 }
 
+// The launch events of the tiles, with what the page shows at each: the splashes, the motion of the
+// tile and the clicks the button of the page has had.
+interface LaunchEvent {
+    type: string;
+    at: number;
+    tile: string;
+    url: string | null;
+    reason: string;
+    splashes: number;
+    splash: DOMRect | null;
+    motion: unknown;
+    clicks: number;
+}
+const launchEvents: LaunchEvent[] = [];
+let buttonClicks = 0;
+for (const type of ['tilelaunchstart', 'tilelaunchactivate', 'tilelaunchend']) {
+    document.addEventListener(type, (e) => {
+        const d = (e as CustomEvent).detail;
+        launchEvents.push({
+            type,
+            at: performance.now(),
+            tile: d.tile.id,
+            url: d.url,
+            reason: d.reason || '',
+            splashes: splashesNow().length,
+            splash: splashesNow()[0] ? splashesNow()[0].getBoundingClientRect() : null,
+            motion: d.tile.debugState.motion,
+            clicks: buttonClicks,
+        });
+    });
+}
+byId('launch-btn').addEventListener('click', () => buttonClicks++);
+// What the page holds on activation, by tile id; a tile in here keeps its splash until the promise settles.
+const holdOn: { [id: string]: () => Promise<unknown> } = {};
+document.addEventListener('tilelaunchstart', (e) => {
+    const id = (e.target as Element).id;
+    if (id === 'launch-cancel') e.preventDefault();
+    if (id === 'launch-nopf') (e as CustomEvent).detail.preventPrefetch();
+});
+document.addEventListener('tilelaunchactivate', (e) => {
+    const make = holdOn[(e.target as Element).id];
+    if (make) (e as CustomEvent).detail.hold(make());
+});
+
+type LaunchTile = HTMLElement & { launch(ready?: Promise<unknown>): Promise<void>; motion(state: unknown): void; debugState: { motion: { rotateY?: number } | null } };
+const launchTileOf = (id: string) => byId(id) as LaunchTile;
+const eventOf = (tile: string, type: string, from: number) => launchEvents.slice(from).find((e) => e.tile === tile && e.type === type);
+// The splashes: the children of the body that are hidden from assistive technology.
+function splashesNow(): HTMLElement[] {
+    return Array.from(document.body.children).filter((el) => el.getAttribute('aria-hidden') === 'true') as HTMLElement[];
+}
+// Presses a launch tile and releases it, then waits for the end of its launch. Returns the event mark.
+async function launchOnce(id: string): Promise<number> {
+    resetHash();
+    const mark = launchEvents.length;
+    await show(id);
+    await step(`press-${id}`);
+    await wait(100);
+    await step('release');
+    await until(() => !!eventOf(id, 'tilelaunchend', mark), 4000);
+    return mark;
+}
+const prefetchesOf = (url: string) => Array.from(document.head.querySelectorAll('link[rel="prefetch"]')).filter((l) => (l as HTMLLinkElement).href === url).length;
+
+async function launchChecks() {
+    // 1. A click on a launch tile: the tile turns, the splash comes up, the link is followed at the end
+    // of the flip, and the splash goes after its fade.
+    resetHash();
+    const mark = launchEvents.length;
+    const href = (actionOf('launch') as HTMLAnchorElement).href;
+    const launch = launchTileOf('launch');
+    await show('launch');
+    await step('press-launch');
+    await wait(100);
+    await step('release');
+    const started = eventOf('launch', 'tilelaunchstart', mark);
+    check('launch: the click starts the launch with the URL of the link', !!started && started.url === href, `url ${started && started.url}`);
+    check('launch: the hash does not change at once', location.hash !== '#launched', location.hash);
+    const t0 = started ? started.at : performance.now();
+    // The turn is under way at 10%: ease-in, so it is still well short of 90 degrees.
+    await until(() => performance.now() - t0 >= 0.1 * 450, 2000);
+    const early = launch.debugState.motion ? launch.debugState.motion.rotateY : undefined;
+    check('launch: the tile is turning from the start (rotateY between 1 and 45 at 10%)', early !== undefined && early > 1 && early < 45, `rotateY ${early}`);
+    await until(() => performance.now() - t0 >= 0.35 * 450, 2000);
+    const rotate = launch.debugState.motion ? launch.debugState.motion.rotateY : undefined;
+    check('launch: at 35% the tile is edge-on (rotateY about 90)', rotate !== undefined && Math.abs(rotate - 90) < 3, `rotateY ${rotate}`);
+    const splashes = splashesNow();
+    const logo = splashes[0] && splashes[0].querySelector('#splash-mark');
+    check('launch: at 35% the splash is in the body, in the color of the tile, with a copy of the logo', splashes.length === 1 && getComputedStyle(splashes[0]).backgroundColor === 'rgb(0, 120, 215)' && !!logo && logo.textContent === 'Logo', `splashes ${splashes.length}`);
+    const followed = await until(() => location.hash === '#launched', 2000);
+    check('launch: the link is followed about one duration after the start', followed >= 0 && Math.abs(followed - t0 - 450) <= 120, `after ${(followed - t0).toFixed(0)} ms`);
+    await until(() => !!eventOf('launch', 'tilelaunchend', mark), 4000);
+    const activate = eventOf('launch', 'tilelaunchactivate', mark);
+    const end = eventOf('launch', 'tilelaunchend', mark);
+    check('launch: tilelaunchactivate fires while the splash covers the page', !!activate && activate.splashes === 1, `splashes ${activate && activate.splashes}`);
+    const r = activate && activate.splash;
+    check('launch: the splash covers the screen at the activation', !!r && Math.abs(r.left) < 1 && Math.abs(r.top) < 1 && Math.abs(r.width - innerWidth) < 1 && Math.abs(r.height - innerHeight) < 1, r ? `${r.left},${r.top} ${r.width}x${r.height}` : 'none');
+    check('launch: the splash goes after its fade, and the tile turns back', !!end && end.splashes === 0 && end.motion === null && !!activate && end.at - activate.at >= 140, `after ${end && activate ? (end.at - activate.at).toFixed(0) : '?'} ms`);
+    check('launch: tilelaunchend says done, with the URL of the link', !!end && end.reason === 'done' && end.url === href, `reason ${end && end.reason}`);
+
+    // 2. The splash waits for a held promise: here 400 ms after the activation.
+    holdOn['launch-hold'] = () => new Promise((r) => setTimeout(r, 400));
+    const mark2 = await launchOnce('launch-hold');
+    delete holdOn['launch-hold'];
+    const a2 = eventOf('launch-hold', 'tilelaunchactivate', mark2);
+    const e2 = eventOf('launch-hold', 'tilelaunchend', mark2);
+    check('hold: the splash stays until the held promise settles', !!a2 && !!e2 && e2.at - a2.at >= 480 && e2.at - a2.at <= 900, `after ${a2 && e2 ? (e2.at - a2.at).toFixed(0) : '?'} ms`);
+
+    // 2b. A held promise that never settles ends with --ax-tile-splash-timeout (200 ms here).
+    holdOn['launch-timeout'] = () => new Promise(() => undefined);
+    const mark3 = await launchOnce('launch-timeout');
+    delete holdOn['launch-timeout'];
+    const a3 = eventOf('launch-timeout', 'tilelaunchactivate', mark3);
+    const e3 = eventOf('launch-timeout', 'tilelaunchend', mark3);
+    check('hold: the timeout ends the hold after --ax-tile-splash-timeout', !!a3 && !!e3 && e3.reason === 'done' && e3.at - a3.at >= 300 && e3.at - a3.at <= 500, `after ${a3 && e3 ? (e3.at - a3.at).toFixed(0) : '?'} ms`);
+
+    // 3. A canceled tilelaunchstart: no launch, the click is activated after the ripple as before.
+    resetHash();
+    const mark4 = launchEvents.length;
+    await show('launch-cancel');
+    await step('press-launch-cancel');
+    await wait(100);
+    await step('release');
+    await wait(30);
+    check('canceled: no splash and no turn', splashesNow().length === 0 && launchTileOf('launch-cancel').debugState.motion === null && location.hash !== '#launch-cancel-target', `hash ${location.hash}`);
+    await until(() => location.hash === '#launch-cancel-target', 4000);
+    check('canceled: the link is followed after the ripple, without the flip', location.hash === '#launch-cancel-target' && !eventOf('launch-cancel', 'tilelaunchactivate', mark4) && !eventOf('launch-cancel', 'tilelaunchend', mark4), `hash ${location.hash}`);
+
+    // 4. Default prefetch: once per URL, and not when preventPrefetch() is called.
+    await launchOnce('launch');
+    check('prefetch: the link is prefetched once, however often it is launched', prefetchesOf(href) === 1, `prefetches ${prefetchesOf(href)}`);
+    const nopfHref = (actionOf('launch-nopf') as HTMLAnchorElement).href;
+    await launchOnce('launch-nopf');
+    check('prefetch: preventPrefetch() suppresses it', prefetchesOf(nopfHref) === 0, `prefetches ${prefetchesOf(nopfHref)}`);
+
+    // 9. bfcache: a page restored while the splash is held takes it down and ends the launch.
+    holdOn['launch-restore'] = () => new Promise(() => undefined);
+    resetHash();
+    const mark5 = launchEvents.length;
+    await show('launch-restore');
+    await step('press-launch-restore');
+    await wait(100);
+    await step('release');
+    await until(() => !!eventOf('launch-restore', 'tilelaunchactivate', mark5), 2000);
+    await wait(200);
+    const heldAt = splashesNow().length;
+    window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
+    const e5 = eventOf('launch-restore', 'tilelaunchend', mark5);
+    delete holdOn['launch-restore'];
+    check('bfcache: a restored page takes the held splash down and ends the launch', heldAt === 1 && splashesNow().length === 0 && launchTileOf('launch-restore').debugState.motion === null && !!e5 && e5.reason === 'restore', `held ${heldAt}, reason ${e5 && e5.reason}`);
+
+    // 6. A tile without --ax-tile-launch: no events, no splash, and the click waits for the ripple as before.
+    resetHash();
+    const mark6 = launchEvents.length;
+    await step('press-normal-tile');
+    await wait(60);
+    await step('release');
+    await until(() => location.hash === '#normal-target', 4000);
+    check('normal tile: no launch events and no splash', launchEvents.slice(mark6).length === 0 && splashesNow().length === 0 && location.hash === '#normal-target', `events ${launchEvents.slice(mark6).length}`);
+
+    // 7. tile.launch(ready) on a button: the events, the click at the end of the flip, the promise after the splash.
+    resetHash();
+    const mark7 = launchEvents.length;
+    const clicks0 = buttonClicks;
+    const btnTile = launchTileOf('launch-button');
+    const ready = new Promise((r) => setTimeout(r, 700));
+    const callAt = performance.now();
+    let resolvedAt = 0;
+    const running = btnTile.launch(ready);
+    const second = btnTile.launch().then(() => 'resolved', () => 'rejected');
+    let resolved = false;
+    let splashAtResolve = -1;
+    running.then(() => {
+        resolved = true;
+        resolvedAt = performance.now();
+        splashAtResolve = splashesNow().length;
+    });
+    await until(() => resolved, 4000);
+    const s7 = eventOf('launch-button', 'tilelaunchstart', mark7);
+    const a7 = eventOf('launch-button', 'tilelaunchactivate', mark7);
+    const e7 = eventOf('launch-button', 'tilelaunchend', mark7);
+    check('launch(): the events fire, and the button runs once, at the end of the flip', !!s7 && !!a7 && !!e7 && a7.clicks - clicks0 === 0 && e7.clicks - clicks0 === 1 && buttonClicks - clicks0 === 1, `clicks ${buttonClicks - clicks0}`);
+    check('launch(): the promise resolves once the splash is gone, and waits for ready', resolved && splashAtResolve === 0 && resolvedAt - callAt >= 680, `splashes ${splashAtResolve}, after ${(resolvedAt - callAt).toFixed(0)} ms`);
+    check('launch(): a second launch of a running tile rejects', (await second) === 'rejected', '');
+    const noAction = await launchTileOf('static').launch().then(() => 'resolved', () => 'rejected');
+    check('launch(): a tile without an action rejects', noAction === 'rejected', noAction);
+    resetHash();
+}
+
+// A modifier click on a launch tile passes at once, as any click of the gate (real keys: Playwright only).
+async function launchKeyChecks() {
+    resetHash();
+    const mark = launchEvents.length;
+    await show('launch-modifiers');
+    await step('click:launch-modifiers:0:Control');
+    await wait(100);
+    check('modifier click: passes at once, no launch and no splash', !eventOf('launch-modifiers', 'tilelaunchstart', mark) && splashesNow().length === 0, `events ${launchEvents.length - mark}`);
+}
+
+// Reduced motion: no turn; the splash covers the page at once, and the click follows on the next frame.
+async function reducedLaunchChecks() {
+    resetHash();
+    const tile = launchTileOf('launch') as any;
+    let turned = false;
+    const motion = tile.motion.bind(tile);
+    tile.motion = (state: { rotateY?: number } | null) => {
+        if (state && state.rotateY) turned = true;
+        motion(state);
+    };
+    // The splash is read on the frame after the start: the driver's ack comes later than the activation.
+    let snap: { n: number; rect: DOMRect | null } | null = null;
+    const onStart = (e: Event) => {
+        if ((e.target as Element).id !== 'launch') return;
+        requestAnimationFrame(() => {
+            const s = splashesNow();
+            snap = { n: s.length, rect: s[0] ? s[0].getBoundingClientRect() : null };
+        });
+    };
+    document.addEventListener('tilelaunchstart', onStart);
+    const mark = launchEvents.length;
+    await show('launch');
+    await step('press-launch');
+    await wait(100);
+    await step('release');
+    await until(() => snap !== null, 1000);
+    document.removeEventListener('tilelaunchstart', onStart);
+    const shot = snap as { n: number; rect: DOMRect | null } | null;
+    const r = shot && shot.rect;
+    check('reduced: the splash covers the viewport on the next frame', !!shot && shot.n === 1 && !!r && r.left === 0 && r.top === 0 && r.width === innerWidth && r.height === innerHeight, `splashes ${shot && shot.n}`);
+    check('reduced: the tile does not turn', !turned, '');
+    await until(() => !!eventOf('launch', 'tilelaunchend', mark), 4000);
+    delete tile.motion;
+    const a = eventOf('launch', 'tilelaunchactivate', mark);
+    const e = eventOf('launch', 'tilelaunchend', mark);
+    check('reduced: the link is followed, and the splash goes without a fade', location.hash === '#launched' && !!a && !!e && e.at - a.at < 100 && e.reason === 'done' && e.splashes === 0, `after ${a && e ? (e.at - a.at).toFixed(0) : '?'} ms`);
+}
+
 async function run() {
     registerRevealLayer();
     register();
     await wait(50);
     if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
         await reducedChecks();
+        await reducedLaunchChecks();
     } else {
         await pointerChecks();
         await overlayChecks();
-        if (realKeys) await keyChecks();
+        await launchChecks();
+        if (realKeys) {
+            await launchKeyChecks();
+            await keyChecks();
+        }
     }
     return { userAgent: navigator.userAgent, checks };
 }

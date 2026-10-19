@@ -27,5 +27,14 @@
 <ax-tile id="focus-styled" layers="fill"><a id="focus-styled-a" slot="action" href="#focus-styled-target">Styled focus</a></ax-tile>
 <ax-tile id="native" focus-ring="native" layers="fill"><a id="native-a" slot="action" href="#native-target">Native</a></ax-tile>
 <ax-tile id="keys-link" layers="fill reveal"><a id="keys-link-a" slot="action" href="#keys-link-target">Link</a></ax-tile>
+<ax-tile id="launch" layers="fill reveal" style="--ax-tile-launch: flip; --ax-fill-color: rgb(0, 120, 215)"><a slot="action" href="#launched">Launch</a><template slot="splash"><span id="splash-mark">Logo</span></template></ax-tile>
+<ax-tile id="launch-button" layers="fill reveal" style="--ax-tile-launch: flip; --ax-fill-color: rgb(0, 120, 215)"><button id="launch-btn" slot="action" type="button">Go</button></ax-tile>
+<ax-tile id="launch-hold" layers="fill reveal" style="--ax-tile-launch: flip; --ax-fill-color: rgb(0, 120, 215)"><a slot="action" href="#launch-hold-target">Hold</a></ax-tile>
+<ax-tile id="launch-timeout" layers="fill reveal" style="--ax-tile-launch: flip; --ax-fill-color: rgb(0, 120, 215); --ax-tile-splash-timeout: 200ms"><a slot="action" href="#launch-timeout-target">Timeout</a></ax-tile>
+<ax-tile id="launch-cancel" layers="fill reveal" style="--ax-tile-launch: flip; --ax-fill-color: rgb(0, 120, 215)"><a slot="action" href="#launch-cancel-target">Cancel</a></ax-tile>
+<ax-tile id="launch-nopf" layers="fill reveal" style="--ax-tile-launch: flip; --ax-fill-color: rgb(0, 120, 215)"><a slot="action" href="#launch-nopf-target">No prefetch</a></ax-tile>
+<ax-tile id="launch-restore" layers="fill reveal" style="--ax-tile-launch: flip; --ax-fill-color: rgb(0, 120, 215)"><a slot="action" href="#launch-restore-target">Restore</a></ax-tile>
+<ax-tile id="launch-modifiers" layers="fill reveal" style="--ax-tile-launch: flip; --ax-fill-color: rgb(0, 120, 215)"><a slot="action" href="about:blank" target="_blank">Modifiers</a></ax-tile>
+<ax-tile id="normal-tile" layers="fill reveal"><a slot="action" href="#normal-target">Normal</a></ax-tile>
 <script type="module" src="./page.ts"></script>
 </body></html>
