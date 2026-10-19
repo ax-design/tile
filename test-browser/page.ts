@@ -275,6 +275,19 @@ async function pointerChecks() {
     check('label hidden: the action keeps its name', hiddenA.textContent === 'Hidden name', String(hiddenA.textContent));
     check('label hidden: the name is not shown', getComputedStyle(hiddenA).fontSize === '0px', getComputedStyle(hiddenA).fontSize);
     check('label hidden: the action still covers the tile', sameRect(rectOf(hiddenA), rectOf(byId('hidden'))), '');
+    {
+        const styled = byId('hidden-styled-a');
+        const size = getComputedStyle(styled).fontSize;
+        check('label="hidden" wins over a font-size the page gives the action', size === '0px' && styled.textContent === 'Styled name', size);
+    }
+    {
+        // The focus layer draws the ring; an outline the page gives focused links must not add a second.
+        const focusStyled = byId('focus-styled-a');
+        focusStyled.focus();
+        const style = getComputedStyle(focusStyled).outlineStyle;
+        focusStyled.blur();
+        check('the focus layer wins over an outline the page gives the action', style === 'none', style);
+    }
 
     // 11b/11a. Focus: the action covers the tile, and the focus ring layer is on by default.
     byId('focus').scrollIntoView();

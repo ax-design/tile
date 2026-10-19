@@ -15,8 +15,10 @@ interface PressableSurface extends Element {
 // The action is the tile name: it covers the tile, sits above the content and lays its text out at
 // the bottom left, as on Windows. Plain properties only: Safari 12 has no inset.
 // The name stays in the accessibility tree with label="hidden": font-size 0 hides it, where
-// color: transparent would be undone by forced colors.
-// Without focus-ring="native" the focus layer draws the ring around the shape, not the browser outline.
+// color: transparent would be undone by forced colors. It is !important: a ::slotted rule loses to
+// any style the page gives the action, and hiding the name is what the attribute asks for.
+// Without focus-ring="native" the focus layer draws the ring around the shape, not the browser outline;
+// !important, so a page-wide :focus-visible outline does not draw a second ring.
 const STYLE = `
 :host { --ax-border-width: 2px; }
 ::slotted([slot="action"]) {
@@ -25,8 +27,8 @@ const STYLE = `
   border: 0; border-radius: 0; background: none; font: inherit; color: inherit;
   text-decoration: none; text-align: start; cursor: pointer;
 }
-:host([label="hidden"]) ::slotted([slot="action"]) { font-size: 0; line-height: 0; }
-:host(:not([focus-ring="native"])) ::slotted([slot="action"]) { outline: none; }
+:host([label="hidden"]) ::slotted([slot="action"]) { font-size: 0 !important; line-height: 0 !important; }
+:host(:not([focus-ring="native"])) ::slotted([slot="action"]) { outline: none !important; }
 `;
 
 // The tilt type of the surface, read from its method (its package is not a dependency of this one).
