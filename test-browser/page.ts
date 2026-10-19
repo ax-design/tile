@@ -202,7 +202,7 @@ async function pointerChecks() {
     resetHash();
     mark = passed.length;
     await step('press-plain');
-    await wait(100);
+    await wait(200);
     await step('release');
     await wait(30);
     check('no reveal layer: the click passes synchronously', location.hash === '#plain-target' && heldSince(mark, 'plain').length === 1 && !replaysSince(mark).length, `hash ${location.hash}`);
@@ -213,7 +213,7 @@ async function pointerChecks() {
     setAlwaysUseFallback(true);
     await frame();
     await step('press-link');
-    await wait(100);
+    await wait(200);
     await step('release');
     await wait(30);
     setAlwaysUseFallback(false);
