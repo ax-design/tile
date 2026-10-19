@@ -1,7 +1,8 @@
 // The launch of a tile (--ax-tile-launch: flip), as Windows 8 starts an app from its tile, measured
-// on a 60 fps recording of Windows 8.1: once the press has sprung back, one rectangle grows from the
-// tile to the screen in about 620 ms. The tile turns edge-on in the first 30% of it while it grows
-// toward the middle of the screen, then the splash of the app (its color and logo) turns from
+// on a 60 fps recording of Windows 8.1: the tile starts to turn at once, and after about 100 ms one
+// rectangle grows from the tile to the screen, fast then slow (curve 61 of the Windows theme), for
+// the rest of about 620 ms. The tile turns edge-on at 30% of it while it grows toward the middle
+// of the screen, then the splash of the app (its color and logo) turns from
 // edge-on to face the viewer while it takes the rest of the way, and stays until the app is ready.
 // The click that starts it is held and sent on once the splash covers the screen. See the README,
 // "Launch".
@@ -17,8 +18,10 @@ interface MotionTile extends Element {
 
 // Defaults of the parameters (see the README).
 const DURATION = 620;
-// The growth of the rectangle, fitted to the recording.
-const EASING: Bezier = [0.45, 0.4, 0.3, 1];
+// The growth of the rectangle, fitted to the recording: curve 61 of the Windows theme, after the
+// first 16% (100 ms) in which the tile only turns.
+const EASING: Bezier = [0.17, 0.55, 0.3, 0.95];
+const GROW_SHARE = 0.16;
 const FADE = 167;
 // The splash stays at least this long once it covers the screen, as an app takes a moment to show
 // its first frame (about 150 to 250 ms in the recording). Without it a fast router would take the
@@ -291,7 +294,8 @@ export function startLaunch(tile: Element, action: Element, activate: () => bool
             frame = 0;
             if (over) return;
             const elapsed = performance.now() - t0;
-            const q = bezierAt(easing, Math.min(1, elapsed / duration));
+            const growStart = duration * GROW_SHARE;
+            const q = elapsed <= growStart ? 0 : bezierAt(easing, Math.min(1, (elapsed - growStart) / (duration - growStart)));
             if (elapsed < turnEnd) {
                 writeTile(q, 90 * bezierAt(TURN_EASING, elapsed / turnEnd), 1);
                 frame = requestAnimationFrame(tick);
@@ -299,7 +303,7 @@ export function startLaunch(tile: Element, action: Element, activate: () => bool
             }
             if (!splash) {
                 // Edge-on from here on, and hidden: the splash goes on from its line.
-                writeTile(bezierAt(easing, TURN_SHARE), 90, 0);
+                writeTile(bezierAt(easing, (TURN_SHARE - GROW_SHARE) / (1 - GROW_SHARE)), 90, 0);
                 splash = makeSplash(splashColor, tile);
                 document.body.appendChild(splash);
             }

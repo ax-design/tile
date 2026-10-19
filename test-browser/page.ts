@@ -484,6 +484,9 @@ async function launchChecks() {
     await until(() => performance.now() - t0 >= 0.1 * LAUNCH, 2000);
     const early = launch.debugState.motion ? launch.debugState.motion.rotateY : undefined;
     check('launch: the tile is turning from the start (rotateY between 1 and 45 at 10%)', early !== undefined && early > 1 && early < 45, `rotateY ${early}`);
+    // For its first 16% it only turns: the growth comes after, as in the recording.
+    const early10 = launch.debugState.motion;
+    check('launch: at 10% the tile turns in place, not grown yet', !!early10 && early10.scale === 1 && early10.x === 0 && early10.y === 0, JSON.stringify(early10));
     // At 20% it has grown and moved toward the middle of the screen, as the recording shows.
     await until(() => performance.now() - t0 >= 0.2 * LAUNCH, 2000);
     const m20 = launch.debugState.motion;
