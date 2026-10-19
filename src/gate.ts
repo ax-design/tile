@@ -76,7 +76,7 @@ function actionOf(event: Event): { action: Element; tile: Element } | null {
 }
 
 // True when a tile sits between the element and `tile`: its press is that tile's business.
-function inNestedTile(element: Element, tile: Element): boolean {
+export function inNestedTile(element: Element, tile: Element): boolean {
     for (let n = element.parentElement; n && n !== tile; n = n.parentElement) {
         if ((n as any)[TILE_BRAND] === true) return true;
     }

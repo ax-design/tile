@@ -3,7 +3,13 @@
 // (see gate.ts). Content goes in the default slot and needs nothing.
 import { AxSurface } from '@ax-design/surface';
 import type { Values } from '@ax-design/surface';
-import { TILE_BRAND, installGate, isDisabled, markKeyboardPress } from './gate.js';
+import { TILE_BRAND, inNestedTile, installGate, isDisabled, markKeyboardPress } from './gate.js';
+
+// A surface inside a tile, read by its methods: it may come from another copy of surface.
+interface PressableSurface extends Element {
+    press(at?: { x: number; y: number } | 'center'): void;
+    release(): void;
+}
 
 // Defaults of a tile, as :host rules: every style of the page wins over them.
 // The action is the tile name: it covers the tile, sits above the content and lays its text out at
@@ -32,6 +38,8 @@ export class AxTile extends AxSurface {
 
     // Keys that started a keyboard press and have not been released yet ('' for none).
     private keyHeld = '';
+    // Surfaces inside the tile that share its current press (see pressInner).
+    private pressedInner: PressableSurface[] = [];
 
     constructor() {
         super();
@@ -43,6 +51,7 @@ export class AxTile extends AxSurface {
         const slot = document.createElement('slot');
         slot.name = 'action';
         root.querySelector('.content')!.appendChild(slot);
+        this.addEventListener('pointerdown', this.onTilePointerDown);
         this.addEventListener('keydown', this.onKeyDown);
         this.addEventListener('keyup', this.onKeyUp);
         this.addEventListener('focusout', this.onFocusOut);
@@ -85,6 +94,51 @@ export class AxTile extends AxSurface {
         return this.actionElement() ? super.tiltParams(values, width, height, x, y) : null;
     }
 
+    // Ends the press of the tile and of the surfaces inside it that share it. tile-group calls this
+    // when a drag takes the gesture over.
+    release(): void {
+        super.release();
+        this.releaseInner();
+    }
+
+    // Surfaces inside a tile share its press: the action covers them, so the pointer never reaches
+    // them, yet their light is part of the tile (a reveal surface over a picture). They are pressed
+    // where the tile is, or at their center for the keyboard. Nested tiles have presses of their own.
+    private pressInner(clientX: number | null, clientY: number | null) {
+        this.releaseInner();
+        const all = this.querySelectorAll('*');
+        for (let i = 0; i < all.length; i++) {
+            const surface = all[i] as PressableSurface;
+            if (typeof surface.press !== 'function' || typeof surface.release !== 'function' || inNestedTile(surface, this)) continue;
+            if (clientX === null || clientY === null) surface.press();
+            else {
+                const r = surface.getBoundingClientRect();
+                surface.press({ x: clientX - r.left, y: clientY - r.top });
+            }
+            this.pressedInner.push(surface);
+        }
+    }
+
+    private releaseInner() {
+        const pressed = this.pressedInner;
+        this.pressedInner = [];
+        for (const surface of pressed) surface.release();
+    }
+
+    private onTilePointerDown = (event: PointerEvent) => {
+        const action = this.actionElement();
+        if (!action || event.button !== 0 || isDisabled(action) || event.composedPath().indexOf(action) < 0) return;
+        this.pressInner(event.clientX, event.clientY);
+        if (!this.pressedInner.length) return;
+        const end = () => {
+            window.removeEventListener('pointerup', end, true);
+            window.removeEventListener('pointercancel', end, true);
+            this.releaseInner();
+        };
+        window.addEventListener('pointerup', end, true);
+        window.addEventListener('pointercancel', end, true);
+    };
+
     // The first child with slot="action".
     private actionElement(): Element | null {
         for (let child = this.firstElementChild; child; child = child.nextElementSibling) {
@@ -104,6 +158,7 @@ export class AxTile extends AxSurface {
         this.keyHeld = event.key;
         markKeyboardPress(this);
         this.press();
+        this.pressInner(null, null);
     };
 
     private onKeyUp = (event: KeyboardEvent) => {

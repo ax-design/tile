@@ -82,6 +82,18 @@ ax-tile.quick {
 }
 ```
 
+### Surfaces inside a tile
+
+A surface inside the tile, such as a reveal light laid over a picture, shares the press of the tile: the action covers it, so the pointer never reaches it, and the tile presses it where the tile was pressed (at its center for the keyboard) and releases it with the tile. Its ripple counts toward the wait. A nested `<ax-tile>` keeps its own press.
+
+```html
+<ax-tile layers="fill">
+  <img src="cover.jpg" alt="">
+  <ax-surface layers="reveal" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%"></ax-surface>
+  <a slot="action" href="/album">Album</a>
+</ax-tile>
+```
+
 ### Keyboard
 
 Enter presses a link or a button, and Space presses a button (Space does not activate a link, which scrolls the page). The press comes from the center of the tile, as a keyboard press does in Windows, and is released on the key up or when the action loses focus. The action then runs after the ripple, as with a mouse.

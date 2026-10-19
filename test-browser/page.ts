@@ -103,6 +103,27 @@ async function pressAndRelease(id: string, hold: number): Promise<number> {
     return performance.now();
 }
 
+// A surface inside a tile (a light over a picture) shares the tile's press: the action covers it, so
+// the pointer never reaches it.
+async function overlayChecks() {
+    await show('overlay');
+    resetHash();
+    const light = byId('overlay-light') as HTMLElement & { pressRemaining(): number; debugState: { local: { pressed: boolean } | null } };
+    await step('press-overlay');
+    await frame();
+    await frame();
+    const local = light.debugState.local;
+    check('overlay: the surface inside the tile is pressed with it', !!local && local.pressed === true, JSON.stringify(local));
+    await step('release');
+    await frame();
+    const rem = light.pressRemaining();
+    check('overlay: its ripple counts toward the delay', rem > 0, `ms ${rem}`);
+    await wait(30);
+    check('overlay: the click waits for that ripple', location.hash !== '#overlay-target', location.hash);
+    check('overlay: and goes on after it', (await until(() => location.hash === '#overlay-target', 4000)) >= 0, location.hash);
+    resetHash();
+}
+
 async function pointerChecks() {
     // 1. A mouse click on a link tile with a ripple: held, then replayed once, marked as a replay.
     resetHash();
@@ -364,6 +385,7 @@ async function run() {
         await reducedChecks();
     } else {
         await pointerChecks();
+        await overlayChecks();
         if (realKeys) await keyChecks();
     }
     return { userAgent: navigator.userAgent, checks };
