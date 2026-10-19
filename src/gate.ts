@@ -1,38 +1,20 @@
 // Delayed activation of <ax-tile>. A press tilts the tile and plays its ripple, and the action runs
 // when that feedback is over, as a Windows tile launches its app after the press. The click is
 // held on the window in the capture phase, before the action and the page see it, and replayed on
-// its target once the feedback has finished. The gate is one for the whole page, so it lives on
-// globalThis: several copies of this package share it.
+// its target once the feedback has finished. A tile with --ax-tile-launch: flip does not wait: it
+// starts its launch (see launch.ts). The gate is one for the whole page (see shared.ts).
 
 import { parseActivationDelayMax } from './delay.js';
+import { flips, isLaunching, replay, startLaunch } from './launch.js';
+import { shared } from './shared.js';
 
 // Marks tile elements across copies of this package (a brand, not instanceof).
 export const TILE_BRAND = typeof Symbol === 'function' && Symbol.for ? Symbol.for('@ax-design/tile.element') : '@ax-design/tile.element';
-const GATE = typeof Symbol === 'function' && Symbol.for ? Symbol.for('@ax-design/tile.gate.v1') : '@ax-design/tile.gate.v1';
 
 // The parts of a tile the gate uses, read by name so that any copy of the element works.
 interface Tile extends Element {
     pressTakenOver: boolean;
     pressRemaining(): number;
-}
-
-interface Gate {
-    installed: boolean;
-    // Clicks this gate replayed: they pass the gate untouched.
-    replays: WeakSet<Event>;
-    // Tiles with an activation waiting for its feedback.
-    pending: WeakSet<Element>;
-    // Tiles whose keyboard press started in the current task.
-    keyboard: WeakSet<Element>;
-}
-
-// globalThis is not in Chrome 70, so a page without it gets the window.
-function shared(): Gate {
-    const root: any = typeof globalThis !== 'undefined' ? globalThis : window;
-    if (!root[GATE]) {
-        root[GATE] = { installed: false, replays: new WeakSet<Event>(), pending: new WeakSet<Element>(), keyboard: new WeakSet<Element>() };
-    }
-    return root[GATE] as Gate;
 }
 
 // Called when the first tile connects. Capture on the window: the gate runs before any listener of
@@ -101,28 +83,14 @@ function activationDelayMax(tile: Element): number | null {
     return parseActivationDelayMax(getComputedStyle(tile).getPropertyValue('--ax-tile-activation-delay-max'));
 }
 
-// Sends the held click to its target, as a click that the browser then acts on (a link navigates,
-// a submit button submits). The replay is marked, so that the analytics of the page can skip it.
-function replay(event: MouseEvent, target: EventTarget, tile: Element): void {
-    const gate = shared();
-    gate.pending.delete(tile);
-    if (!tile.isConnected) return;
-    const click = new MouseEvent('click', {
-        bubbles: true,
-        cancelable: true,
-        composed: true,
-        view: window,
-        detail: event.detail,
-        screenX: event.screenX,
-        screenY: event.screenY,
-        clientX: event.clientX,
-        clientY: event.clientY,
-        button: 0,
-        buttons: 0,
-    });
-    (click as MouseEvent & { axReplay?: boolean }).axReplay = true;
-    gate.replays.add(click);
-    target.dispatchEvent(click);
+// Sends the held click once the feedback has finished. A keyboard press is measured a frame later.
+function activateAfterFeedback(event: MouseEvent, target: EventTarget, tile: Element, keyboard: boolean): void {
+    const wait = (ms: number) => {
+        const cap = activationDelayMax(tile);
+        setTimeout(() => replay(event, target, tile), Math.max(0, cap === null ? ms : Math.min(ms, cap)));
+    };
+    if (keyboard) requestAnimationFrame(() => wait(remainingOf(tile)));
+    else wait(remainingOf(tile));
 }
 
 function onClick(event: MouseEvent): void {
@@ -137,24 +105,27 @@ function onClick(event: MouseEvent): void {
     if (isDisabled(action) || tile.getAttribute('activation') === 'immediate') return;
     // A container took the gesture over (a drag, see release()): the click that ends it is dropped.
     if ((tile as Tile).pressTakenOver) return swallow(event);
-    // A second click during the wait must not activate the action a second time.
-    if (gate.pending.has(tile)) return swallow(event);
+    // A second click during the wait, or during a launch, must not activate the action a second time.
+    if (gate.pending.has(tile) || isLaunching(tile)) return swallow(event);
 
+    // The first node of the path, not event.target: a tile inside another component's shadow root
+    // would show its host here.
+    const target = event.composedPath()[0] || event.target;
     const keyboard = gate.keyboard.has(tile);
+    if (flips(tile)) {
+        swallow(event);
+        gate.pending.add(tile);
+        // The launch takes the click and does not wait for the feedback. Canceled, it falls back to the delay.
+        if (startLaunch(tile, action, () => replay(event, target, tile), null)) return;
+        return activateAfterFeedback(event, target, tile, keyboard);
+    }
+
     // Without a press in progress there is nothing to wait for; a press from the keyboard is measured
     // a frame later, so it is always held.
     const remaining = keyboard ? 0 : remainingOf(tile);
     if (!keyboard && remaining <= 0) return;
 
-    // The first node of the path, not event.target: a tile inside another component's shadow root
-    // would show its host here.
-    const target = event.composedPath()[0] || event.target;
     swallow(event);
     gate.pending.add(tile);
-    const wait = (ms: number) => {
-        const cap = activationDelayMax(tile);
-        setTimeout(() => replay(event, target, tile), Math.max(0, cap === null ? ms : Math.min(ms, cap)));
-    };
-    if (keyboard) requestAnimationFrame(() => wait(remainingOf(tile)));
-    else wait(remaining);
+    activateAfterFeedback(event, target, tile, keyboard);
 }

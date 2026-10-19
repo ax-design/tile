@@ -4,6 +4,7 @@
 import { AxSurface } from '@ax-design/surface';
 import type { Values } from '@ax-design/surface';
 import { TILE_BRAND, inNestedTile, installGate, isDisabled, markKeyboardPress } from './gate.js';
+import { isLaunching, replay, startLaunch } from './launch.js';
 
 // A surface inside a tile, read by its methods: it may come from another copy of surface.
 interface PressableSurface extends Element {
@@ -42,6 +43,18 @@ export class AxTile extends AxSurface {
     private keyHeld = '';
     // Surfaces inside the tile that share its current press (see pressInner).
     private pressedInner: PressableSurface[] = [];
+
+    // Launches the tile from code, as a click on a tile with --ax-tile-launch: flip does: the events,
+    // the flip and the activation of the action (see launch.ts). It runs whatever the tile's
+    // --ax-tile-launch says, as calling it is the opt-in. `ready` holds the splash until it settles.
+    // The promise resolves when the splash is gone; a canceled tilelaunchstart resolves it at once,
+    // with nothing launched.
+    launch(ready?: Promise<unknown>): Promise<void> {
+        const action = this.actionElement();
+        if (!action || isDisabled(action)) return Promise.reject(new Error('<ax-tile>.launch(): the tile has no enabled action'));
+        if (isLaunching(this)) return Promise.reject(new Error('<ax-tile>.launch(): a launch of this tile is running'));
+        return startLaunch(this, action, () => replay(null, action, this), ready || null) || Promise.resolve();
+    }
 
     constructor() {
         super();
