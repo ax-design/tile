@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { parseActivationDelayMax, parseTime } from '../src/delay.js';
+import { MAX_TIMER, parseActivationDelayMax, parseTime, parseTimeout } from '../src/delay.js';
 
 describe('parseActivationDelayMax', () => {
     test('reads milliseconds and seconds', () => {
@@ -28,4 +28,13 @@ describe('parseTime', () => {
             expect(parseTime(value)).toBeNull();
         }
     });
+});
+
+test('parseTimeout reads none as no timeout and cuts huge times to the longest timer', () => {
+    expect(parseTimeout('none')).toBe(Infinity);
+    expect(parseTimeout(' NONE ')).toBe(Infinity);
+    expect(parseTimeout('5s')).toBe(5000);
+    expect(parseTimeout('3000000s')).toBe(MAX_TIMER);
+    expect(parseTimeout('')).toBeNull();
+    expect(parseTimeout('forever')).toBeNull();
 });

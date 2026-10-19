@@ -512,6 +512,33 @@ async function launchChecks() {
     const e3 = eventOf('launch-timeout', 'tilelaunchend', mark3);
     check('hold: the timeout ends the hold after --ax-tile-splash-timeout', !!a3 && !!e3 && e3.reason === 'done' && e3.at - a3.at >= 300 && e3.at - a3.at <= 500, `after ${a3 && e3 ? (e3.at - a3.at).toFixed(0) : '?'} ms`);
 
+    // 2c. `none`: no timeout. The splash waits for the held promise however long it takes.
+    {
+        let release: () => void = () => undefined;
+        holdOn['launch-forever'] = () => new Promise<void>((r) => (release = r));
+        resetHash();
+        const mark = launchEvents.length;
+        await show('launch-forever');
+        await step('press-launch-forever');
+        await wait(100);
+        await step('release');
+        await until(() => !!eventOf('launch-forever', 'tilelaunchactivate', mark), 4000);
+        await wait(6000);
+        check('timeout none: the splash still waits after the 5 s default', splashesNow().length === 1 && !eventOf('launch-forever', 'tilelaunchend', mark), `splashes ${splashesNow().length}`);
+        release();
+        await until(() => !!eventOf('launch-forever', 'tilelaunchend', mark), 2000);
+        delete holdOn['launch-forever'];
+        check('timeout none: the splash goes once the promise settles', !!eventOf('launch-forever', 'tilelaunchend', mark) && splashesNow().length === 0, `splashes ${splashesNow().length}`);
+    }
+
+    // 2d. A time past the longest browser timer is cut to it, not fired at once.
+    holdOn['launch-huge'] = () => new Promise((r) => setTimeout(r, 400));
+    const markHuge = await launchOnce('launch-huge');
+    delete holdOn['launch-huge'];
+    const aHuge = eventOf('launch-huge', 'tilelaunchactivate', markHuge);
+    const eHuge = eventOf('launch-huge', 'tilelaunchend', markHuge);
+    check('timeout 3000000s: the splash waits for the promise, not for nothing', !!aHuge && !!eHuge && eHuge.at - aHuge.at >= 400, `after ${aHuge && eHuge ? (eHuge.at - aHuge.at).toFixed(0) : '?'} ms`);
+
     // 3. A canceled tilelaunchstart: no launch, the click is activated after the ripple as before.
     resetHash();
     const mark4 = launchEvents.length;

@@ -11,3 +11,16 @@ export function parseTime(value: string): number | null {
 export function parseActivationDelayMax(value: string): number | null {
     return parseTime(value);
 }
+
+// The longest delay a browser timer takes (2^31 - 1 ms, about 24.8 days): a longer one fires at
+// once instead.
+export const MAX_TIMER = 2147483647;
+
+// Reads --ax-tile-splash-timeout: a <time>, or `none` for no timeout (Infinity). A time past the
+// longest timer is cut to it, so that a huge value does not end the splash at once. Anything else
+// is null (the default applies).
+export function parseTimeout(value: string): number | null {
+    if (value.trim().toLowerCase() === 'none') return Infinity;
+    const time = parseTime(value);
+    return time === null ? null : Math.min(time, MAX_TIMER);
+}

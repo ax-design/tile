@@ -139,7 +139,7 @@ The launch is opt-in: any other value of `--ax-tile-launch` keeps the delayed ac
 * `--ax-tile-launch-easing`: the timing function of the splash, as a CSS timing function (`linear`, `ease`, `cubic-bezier()`...). Default `cubic-bezier(0.1, 0.9, 0.2, 1)`.
 * `--ax-tile-splash-color`: the color of the splash. Default: the fill color of the tile (`--ax-fill-color`), or `Canvas` in forced colors. A transparent color gives a black splash, the default of Windows for an app that declares none.
 * `--ax-tile-splash-fade`: a `<time>`, the fade of the splash once the app is ready. Default `167ms`.
-* `--ax-tile-splash-timeout`: a `<time>`, the longest the splash waits for the promises held (see below). Default `5s`.
+* `--ax-tile-splash-timeout`: a `<time>`, the longest the splash waits for the promises held, or for a full-page navigation (see below). Default `5s`. `none` waits for as long as it takes: then a promise that never settles, or a navigation that never happens (a 204, a download), leaves the splash over the page, so hold only promises that settle. A time past about 24.8 days, the longest a browser timer waits, is cut to it.
 
 The splash shows the content of the `<template slot="splash">` of the tile, centered on the color. It is put on the page, not in the tile, and it covers the page while it is there: it takes the pointer.
 

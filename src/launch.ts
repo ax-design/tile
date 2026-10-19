@@ -4,7 +4,7 @@
 // starts it is held and sent on once the splash covers the screen. See the README, "Launch".
 import { appearance, bezierAt, parseEasing } from '@ax-design/surface';
 import type { Bezier, MotionState } from '@ax-design/surface';
-import { parseTime } from './delay.js';
+import { parseTime, parseTimeout } from './delay.js';
 import { shared } from './shared.js';
 
 // The surface of a tile, read by its method (it may come from another copy of surface).
@@ -154,7 +154,9 @@ export function startLaunch(tile: Element, action: Element, activate: () => bool
         const turnEnd = duration * TURN_SHARE;
         const easing = parseEasing(prop(tile, '--ax-tile-launch-easing')) || EASING;
         const fade = reduced ? 0 : timeOf(tile, '--ax-tile-splash-fade', FADE);
-        const timeout = timeOf(tile, '--ax-tile-splash-timeout', TIMEOUT);
+        // `none` waits for as long as it takes: Infinity, and no timer below.
+        const parsedTimeout = parseTimeout(prop(tile, '--ax-tile-splash-timeout'));
+        const timeout = parsedTimeout === null ? TIMEOUT : parsedTimeout;
         const forced = appearance().forcedColors;
         // A transparent splash would show the page through the launch: black, as the default of Windows.
         const resolved = prop(tile, '--ax-tile-splash-color') || (forced ? 'Canvas' : prop(tile, '--ax-fill-color'));
@@ -218,7 +220,7 @@ export function startLaunch(tile: Element, action: Element, activate: () => bool
                 clearTimeout(limit);
                 if (!over) fadeOut();
             };
-            limit = window.setTimeout(settle, timeout);
+            if (isFinite(timeout)) limit = window.setTimeout(settle, timeout);
             if (pending.length) Promise.all(pending.map((p) => p.then(noop, noop))).then(settle);
         };
 
