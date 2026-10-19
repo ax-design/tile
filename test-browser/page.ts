@@ -422,6 +422,11 @@ for (const type of ['tilelaunchstart', 'tilelaunchactivate', 'tilelaunchend']) {
     });
 }
 byId('launch-btn').addEventListener('click', () => buttonClicks++);
+// A router-like listener: it takes the replayed click of its link and prevents the navigation.
+document.addEventListener('click', (e) => {
+    const target = e.target as Element;
+    if (target.closest && target.closest('#launch-router') && (e as MouseEvent & { axReplay?: boolean }).axReplay) e.preventDefault();
+});
 // What the page holds on activation, by tile id; a tile in here keeps its splash until the promise settles.
 const holdOn: { [id: string]: () => Promise<unknown> } = {};
 document.addEventListener('tilelaunchstart', (e) => {
@@ -488,6 +493,7 @@ async function launchChecks() {
     const r = activate && activate.splash;
     check('launch: the splash covers the screen at the activation', !!r && Math.abs(r.left) < 1 && Math.abs(r.top) < 1 && Math.abs(r.width - innerWidth) < 1 && Math.abs(r.height - innerHeight) < 1, r ? `${r.left},${r.top} ${r.width}x${r.height}` : 'none');
     check('launch: the splash goes after its fade, and the tile turns back', !!end && end.splashes === 0 && end.motion === null && !!activate && end.at - activate.at >= 140, `after ${end && activate ? (end.at - activate.at).toFixed(0) : '?'} ms`);
+    check('launch: a hash link keeps no hold: the splash goes after its fade', !!activate && !!end && end.at - activate.at < 400, `after ${end && activate ? (end.at - activate.at).toFixed(0) : '?'} ms`);
     check('launch: tilelaunchend says done, with the URL of the link', !!end && end.reason === 'done' && end.url === href, `reason ${end && end.reason}`);
 
     // 2. The splash waits for a held promise: here 400 ms after the activation.
@@ -517,6 +523,16 @@ async function launchChecks() {
     check('canceled: no splash and no turn', splashesNow().length === 0 && launchTileOf('launch-cancel').debugState.motion === null && location.hash !== '#launch-cancel-target', `hash ${location.hash}`);
     await until(() => location.hash === '#launch-cancel-target', 4000);
     check('canceled: the link is followed after the ripple, without the flip', location.hash === '#launch-cancel-target' && !eventOf('launch-cancel', 'tilelaunchactivate', mark4) && !eventOf('launch-cancel', 'tilelaunchend', mark4), `hash ${location.hash}`);
+
+    // 3b. launch() with a canceled start: the action runs at once, with no turn, and the promise resolves after it.
+    resetHash();
+    const mark8 = launchEvents.length;
+    const canceledTile = launchTileOf('launch-cancel');
+    const called = performance.now();
+    await canceledTile.launch();
+    // Firefox applies a fragment navigation a moment after the click: the hash must follow within 300 ms.
+    const changed = await until(() => location.hash === '#launch-cancel-target', 300);
+    check('launch(): a canceled start runs the action at once, with no turn and no splash', changed >= 0 && !!eventOf('launch-cancel', 'tilelaunchstart', mark8) && !eventOf('launch-cancel', 'tilelaunchactivate', mark8) && canceledTile.debugState.motion === null && splashesNow().length === 0, `hash ${location.hash} after ${(changed - called).toFixed(0)} ms`);
 
     // 4. Default prefetch: once per URL, and not when preventPrefetch() is called.
     await launchOnce('launch');
@@ -627,10 +643,65 @@ async function reducedLaunchChecks() {
     check('reduced: the link is followed, and the splash goes without a fade', location.hash === '#launched' && !!a && !!e && e.at - a.at < 100 && e.reason === 'done' && e.splashes === 0, `after ${a && e ? (e.at - a.at).toFixed(0) : '?'} ms`);
 }
 
+// A launch from a router-like listener, a transparent tile and the keyboard.
+async function launchMoreChecks() {
+    // A router takes the replayed click (prevents it): the page keeps its frame, and the splash goes on
+    // the next frame, with no hold.
+    const mark = await launchOnce('launch-router');
+    const rA = eventOf('launch-router', 'tilelaunchactivate', mark);
+    const rE = eventOf('launch-router', 'tilelaunchend', mark);
+    check('router: a prevented click gives no navigation hold; the splash goes after its fade', location.pathname === '/' && !!rA && !!rE && rE.at - rA.at < 400 && rE.reason === 'done', `path ${location.pathname}, after ${rA && rE ? (rE.at - rA.at).toFixed(0) : '?'} ms`);
+
+    // A tile with no fill: the splash is black, not transparent.
+    resetHash();
+    const mark2 = launchEvents.length;
+    await show('launch-dark');
+    await step('press-launch-dark');
+    await wait(100);
+    await step('release');
+    const started = eventOf('launch-dark', 'tilelaunchstart', mark2);
+    const t0 = started ? started.at : performance.now();
+    await until(() => performance.now() - t0 >= 0.35 * 450, 2000);
+    const dark = splashesNow()[0];
+    check('splash color: a transparent color gives a black splash', !!dark && getComputedStyle(dark).backgroundColor === 'rgb(0, 0, 0)', dark ? getComputedStyle(dark).backgroundColor : 'no splash');
+    await until(() => !!eventOf('launch-dark', 'tilelaunchend', mark2), 4000);
+}
+
+// The keyboard: Enter on the action of a flip tile runs the launch as a click does.
+async function launchKeyboardChecks() {
+    resetHash();
+    const mark = launchEvents.length;
+    const href = (actionOf('launch') as HTMLAnchorElement).href;
+    const launch = launchTileOf('launch');
+    await show('launch');
+    actionOf('launch').focus();
+    await step('down:Enter');
+    const started = eventOf('launch', 'tilelaunchstart', mark);
+    check('keyboard: Enter starts the launch with the URL of the link', !!started && started.url === href, `url ${started && started.url}`);
+    const t0 = started ? started.at : performance.now();
+    // The front half is 30% of the duration; halfway through it the tile has turned part of the way.
+    await until(() => performance.now() - t0 >= 0.15 * 450, 1000);
+    const mid = launch.debugState.motion ? launch.debugState.motion.rotateY : undefined;
+    check('keyboard: the tile is turning midway through the turn', mid !== undefined && mid > 5 && mid < 85, `rotateY ${mid}`);
+    await step('up:Enter');
+    const followed = await until(() => location.hash === '#launched', 2000);
+    check('keyboard: the link is followed about one duration after the start', followed >= 0 && Math.abs(followed - t0 - 450) <= 120, `after ${(followed - t0).toFixed(0)} ms`);
+    await until(() => !!eventOf('launch', 'tilelaunchend', mark), 4000);
+    const end = eventOf('launch', 'tilelaunchend', mark);
+    check('keyboard: the launch ends as a click launch does', !!end && end.reason === 'done' && end.splashes === 0, `reason ${end && end.reason}`);
+    resetHash();
+}
+
 async function run() {
     registerRevealLayer();
     register();
     await wait(50);
+    // The navigation checks (run.ts) load this page with ?navigate: they drive it from outside.
+    if (new URLSearchParams(location.search).has('navigate')) {
+        // A beacon of the splash every 50 ms: it still goes out while the page is navigating away.
+        setInterval(() => navigator.sendBeacon(`/beacon?n=${splashesNow().length}&p=${encodeURIComponent(location.pathname)}`), 50);
+        return;
+    }
     if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
         await reducedChecks();
         await reducedLaunchChecks();
@@ -638,8 +709,10 @@ async function run() {
         await pointerChecks();
         await overlayChecks();
         await launchChecks();
+        await launchMoreChecks();
         if (realKeys) {
             await launchKeyChecks();
+            await launchKeyboardChecks();
             await keyChecks();
         }
     }

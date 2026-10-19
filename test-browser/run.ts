@@ -10,10 +10,27 @@ if (!process.env.SKIP_BUILD) {
     const result = await Bun.build({ entrypoints: [join(dir, 'page.html')], outdir: dist, conditions: ['source'] });
     if (!result.success) throw new Error(result.logs.join('\n'));
 }
+// What the navigation checks see: when the next page was requested, and the splash counts that the page
+// beacons (a page that is navigating away cannot be read any other way).
+const seen = { requests: [] as number[], beacons: [] as { t: number; n: number; path: string }[] };
+
 const server = Bun.serve({
     port: 0,
-    fetch(req) {
+    async fetch(req) {
         const path = new URL(req.url).pathname;
+        // A page that answers late: the navigation to it takes 1.5 s, and the splash must be up meanwhile.
+        if (path === '/beacon') {
+            const q = new URL(req.url).searchParams;
+            seen.beacons.push({ t: Date.now(), n: Number(q.get('n')), path: q.get('p') || '' });
+            return new Response(null, { status: 204 });
+        }
+        if (path === '/next.html') {
+            seen.requests.push(Date.now());
+            await Bun.sleep(1500);
+            return new Response('<!doctype html><title>Next</title><h1 id="next">Next</h1>', { headers: { 'content-type': 'text/html' } });
+        }
+        // A link that navigates nowhere.
+        if (path === '/nothing') return new Response(null, { status: 204 });
         const file = Bun.file(join(dist, path === '/' ? 'page.html' : path));
         return file.size ? new Response(file) : new Response('', { status: 404 });
     },
@@ -29,6 +46,8 @@ interface Driver {
     click?(x: number, y: number, button: number, modifiers: string[]): Promise<void>;
     // Popups opened since the start (Playwright only).
     popups?(): number;
+    // Waits until the page is at a path (Playwright only).
+    navigated?(path: string): Promise<void>;
     close(): Promise<void>;
 }
 
@@ -54,6 +73,7 @@ async function playwright(name: string, url: string, reduced = false): Promise<D
             for (const m of modifiers.slice().reverse()) await page.keyboard.up(m);
         },
         popups: () => popups,
+        navigated: (path) => page.waitForURL((u) => u.pathname === path, { timeout: 8000 }),
         close: () => browser.close(),
     };
 }
@@ -131,6 +151,60 @@ async function drive(d: Driver) {
     }
 }
 
+interface Check {
+    name: string;
+    ok: boolean;
+    detail: string;
+}
+
+// The splash of a launch across a navigation (Playwright only). A link that navigates nowhere ends its
+// splash at the timeout; a link to a slow page keeps the splash up until the page loads.
+async function navigation(d: Driver): Promise<Check[]> {
+    const checks: Check[] = [];
+    const count = `document.querySelectorAll('[aria-hidden="true"]').length`;
+    const press = async (id: string) => {
+        await d.eval(`document.getElementById('${id}').scrollIntoView({ block: 'center' })`);
+        await Bun.sleep(100);
+        const c = await d.eval<{ x: number; y: number }>(`(() => { const r = document.getElementById('${id}').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+        await d.move(c.x, c.y);
+        await d.down();
+        await Bun.sleep(100);
+        await d.up();
+    };
+
+    // 1. A link that answers 204: no navigation, so the splash goes at its timeout (400 ms on this tile).
+    await press('launch-204');
+    // 250 ms after the activation, inside the 400 ms timeout of the tile.
+    await Bun.sleep(700);
+    const during = await d.eval<{ splashes: number; path: string }>(`({ splashes: ${count}, path: location.pathname })`);
+    checks.push({ name: 'navigation: the splash is up while the timeout runs', ok: during.splashes === 1 && during.path === '/', detail: JSON.stringify(during) });
+    let gone = false;
+    for (let i = 0; i < 60 && !gone; i++) {
+        await Bun.sleep(50);
+        gone = (await d.eval<number>(count)) === 0;
+    }
+    const after = await d.eval<string>('location.pathname');
+    checks.push({ name: 'navigation: a navigation that never happens ends the splash at the timeout', ok: gone && after === '/', detail: `gone ${gone}, path ${after}` });
+
+    // 2. A link to another document: the splash stays up while the slow page loads, and then the page is there.
+    await press('launch-nav');
+    let loaded = true;
+    try {
+        await d.navigated!('/next.html');
+    } catch (e) {
+        loaded = false;
+    }
+    // The navigation request is the last one for the next page (the link prefetch comes before it). The
+    // page is replaced when its response arrives, 1.5 s after that request: the beacons in between show
+    // the splash over the old page, 300 ms or more after the activation.
+    const requested = seen.requests[seen.requests.length - 1] || 0;
+    const held = seen.beacons.filter((b) => b.t >= requested + 300 && b.t <= requested + 1200);
+    checks.push({ name: 'navigation: the splash stays while the next page is loading', ok: held.length >= 5 && held.every((b) => b.n === 1 && b.path === '/'), detail: `beacons ${held.length}, splashes ${held.map((b) => b.n).join('')}` });
+    const text = loaded ? await d.eval<string | null>(`document.getElementById('next') && document.getElementById('next').textContent`) : null;
+    checks.push({ name: 'navigation: the next page loads', ok: text === 'Next', detail: `text ${text}` });
+    return checks;
+}
+
 let failed = 0;
 for (const name of process.argv.slice(2).length ? process.argv.slice(2) : ['chromium']) {
     // default: the pointer and key checks; reduced: emulated reduced motion, which the Safari driver cannot do.
@@ -157,6 +231,20 @@ for (const name of process.argv.slice(2).length ? process.argv.slice(2) : ['chro
         const bad = result.checks.filter((c: any) => !c.ok);
         failed += bad.length;
         console.log(`${name} ${mode}: ${result.checks.length - bad.length}/${result.checks.length} passed`);
+        for (const c of bad) console.log(`  FAIL ${c.name}: ${c.detail}`);
+    }
+    if (name !== 'safari') {
+        // ?navigate: the page leaves its checks to these, which drive it from here.
+        const d = await playwright(name, `http://127.0.0.1:${server.port}/?navigate`);
+        let checks: Check[];
+        try {
+            checks = await navigation(d);
+        } finally {
+            await d.close();
+        }
+        const bad = checks.filter((c) => !c.ok);
+        failed += bad.length;
+        console.log(`${name} navigation: ${checks.length - bad.length}/${checks.length} passed`);
         for (const c of bad) console.log(`  FAIL ${c.name}: ${c.detail}`);
     }
 }
