@@ -459,9 +459,9 @@ async function launchOnce(id: string): Promise<number> {
 }
 const prefetchesOf = (url: string) => Array.from(document.head.querySelectorAll('link[rel="prefetch"]')).filter((l) => (l as HTMLLinkElement).href === url).length;
 
-// The default duration of the launch, and the least time the splash stays once it covers the screen.
+// The default duration of the launch, and the time the splash stays once nothing holds it.
 const LAUNCH = 620;
-const SPLASH_MIN = 250;
+const SPLASH_HOLD = 500;
 
 async function launchChecks() {
     // 1. A click on a launch tile: the tile turns, the splash comes up, the link is followed at the end
@@ -509,8 +509,8 @@ async function launchChecks() {
     check('launch: tilelaunchactivate fires while the splash covers the page', !!activate && activate.splashes === 1, `splashes ${activate && activate.splashes}`);
     const r = activate && activate.splash;
     check('launch: the splash covers the screen at the activation', !!r && Math.abs(r.left) < 1 && Math.abs(r.top) < 1 && Math.abs(r.width - innerWidth) < 1 && Math.abs(r.height - innerHeight) < 1, r ? `${r.left},${r.top} ${r.width}x${r.height}` : 'none');
-    check('launch: the splash stays its least time, then goes after its fade, and the tile turns back', !!end && end.splashes === 0 && end.motion === null && !!activate && end.at - activate.at >= SPLASH_MIN + 140, `after ${end && activate ? (end.at - activate.at).toFixed(0) : '?'} ms`);
-    check('launch: a hash link keeps no other hold', !!activate && !!end && end.at - activate.at < SPLASH_MIN + 400, `after ${end && activate ? (end.at - activate.at).toFixed(0) : '?'} ms`);
+    check('launch: the splash stays for its hold, then goes after its fade, and the tile turns back', !!end && end.splashes === 0 && end.motion === null && !!activate && end.at - activate.at >= SPLASH_HOLD + 140, `after ${end && activate ? (end.at - activate.at).toFixed(0) : '?'} ms`);
+    check('launch: a hash link keeps no other hold', !!activate && !!end && end.at - activate.at < SPLASH_HOLD + 400, `after ${end && activate ? (end.at - activate.at).toFixed(0) : '?'} ms`);
     check('launch: tilelaunchend says done, with the URL of the link', !!end && end.reason === 'done' && end.url === href, `reason ${end && end.reason}`);
 
     // 2. The splash waits for a held promise: here 400 ms after the activation.
@@ -519,7 +519,7 @@ async function launchChecks() {
     delete holdOn['launch-hold'];
     const a2 = eventOf('launch-hold', 'tilelaunchactivate', mark2);
     const e2 = eventOf('launch-hold', 'tilelaunchend', mark2);
-    check('hold: the splash stays until the held promise settles', !!a2 && !!e2 && e2.at - a2.at >= 480 && e2.at - a2.at <= 900, `after ${a2 && e2 ? (e2.at - a2.at).toFixed(0) : '?'} ms`);
+    check('hold: the splash stays until the held promise settles, then for its hold', !!a2 && !!e2 && e2.at - a2.at >= 400 + SPLASH_HOLD + 140 && e2.at - a2.at <= 400 + SPLASH_HOLD + 450, `after ${a2 && e2 ? (e2.at - a2.at).toFixed(0) : '?'} ms`);
 
     // 2b. A held promise that never settles ends with --ax-tile-splash-timeout (200 ms here).
     holdOn['launch-timeout'] = () => new Promise(() => undefined);
@@ -527,7 +527,7 @@ async function launchChecks() {
     delete holdOn['launch-timeout'];
     const a3 = eventOf('launch-timeout', 'tilelaunchactivate', mark3);
     const e3 = eventOf('launch-timeout', 'tilelaunchend', mark3);
-    check('hold: the timeout ends the hold after --ax-tile-splash-timeout', !!a3 && !!e3 && e3.reason === 'done' && e3.at - a3.at >= 300 && e3.at - a3.at <= 500, `after ${a3 && e3 ? (e3.at - a3.at).toFixed(0) : '?'} ms`);
+    check('hold: the timeout ends the wait after --ax-tile-splash-timeout, then the splash stays for its hold', !!a3 && !!e3 && e3.reason === 'done' && e3.at - a3.at >= 200 + SPLASH_HOLD + 100 && e3.at - a3.at <= 200 + SPLASH_HOLD + 350, `after ${a3 && e3 ? (e3.at - a3.at).toFixed(0) : '?'} ms`);
 
     // 2c. `none`: no timeout. The splash waits for the held promise however long it takes.
     {
@@ -554,7 +554,7 @@ async function launchChecks() {
     delete holdOn['launch-huge'];
     const aHuge = eventOf('launch-huge', 'tilelaunchactivate', markHuge);
     const eHuge = eventOf('launch-huge', 'tilelaunchend', markHuge);
-    check('timeout 3000000s: the splash waits for the promise, not for nothing', !!aHuge && !!eHuge && eHuge.at - aHuge.at >= 400, `after ${aHuge && eHuge ? (eHuge.at - aHuge.at).toFixed(0) : '?'} ms`);
+    check('timeout 3000000s: the splash waits for the promise, not for nothing', !!aHuge && !!eHuge && eHuge.at - aHuge.at >= 400 + SPLASH_HOLD, `after ${aHuge && eHuge ? (eHuge.at - aHuge.at).toFixed(0) : '?'} ms`);
 
     // 3. A canceled tilelaunchstart: no launch, the click is activated after the ripple as before.
     resetHash();
@@ -684,7 +684,7 @@ async function reducedLaunchChecks() {
     delete tile.motion;
     const a = eventOf('launch', 'tilelaunchactivate', mark);
     const e = eventOf('launch', 'tilelaunchend', mark);
-    check('reduced: the link is followed, and the splash goes after its least time, without a fade', location.hash === '#launched' && !!a && !!e && e.at - a.at >= SPLASH_MIN - 20 && e.at - a.at < SPLASH_MIN + 100 && e.reason === 'done' && e.splashes === 0, `after ${a && e ? (e.at - a.at).toFixed(0) : '?'} ms`);
+    check('reduced: the link is followed, and the splash goes after its hold, without a fade', location.hash === '#launched' && !!a && !!e && e.at - a.at >= SPLASH_HOLD - 20 && e.at - a.at < SPLASH_HOLD + 100 && e.reason === 'done' && e.splashes === 0, `after ${a && e ? (e.at - a.at).toFixed(0) : '?'} ms`);
 }
 
 // A launch from a router-like listener, a transparent tile and the keyboard.
@@ -694,7 +694,7 @@ async function launchMoreChecks() {
     const mark = await launchOnce('launch-router');
     const rA = eventOf('launch-router', 'tilelaunchactivate', mark);
     const rE = eventOf('launch-router', 'tilelaunchend', mark);
-    check('router: a prevented click gives no navigation hold; the splash goes after its fade', location.pathname === '/' && !!rA && !!rE && rE.at - rA.at < SPLASH_MIN + 400 && rE.reason === 'done', `path ${location.pathname}, after ${rA && rE ? (rE.at - rA.at).toFixed(0) : '?'} ms`);
+    check('router: a prevented click gives no navigation hold; the splash goes after its fade', location.pathname === '/' && !!rA && !!rE && rE.at - rA.at < SPLASH_HOLD + 400 && rE.reason === 'done', `path ${location.pathname}, after ${rA && rE ? (rE.at - rA.at).toFixed(0) : '?'} ms`);
 
     // A tile with no fill: the splash is black, not transparent.
     resetHash();

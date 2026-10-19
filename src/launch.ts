@@ -23,10 +23,10 @@ const DURATION = 620;
 const EASING: Bezier = [0.17, 0.55, 0.3, 0.95];
 const GROW_SHARE = 0.16;
 const FADE = 167;
-// The splash stays at least this long once it covers the screen, as an app takes a moment to show
-// its first frame (about 150 to 250 ms in the recording). Without it a fast router would take the
-// splash away the moment it arrives.
-const SPLASH_MIN = 250;
+// The splash stays this long once the launch is over: after it covers the screen and whatever held it
+// has settled (or the timeout). An app takes a moment to show its first frame, and without the hold a
+// fast router would take the splash away the moment it arrives.
+const SPLASH_HOLD = 500;
 const TIMEOUT = 5000;
 // The tile turns edge-on in the first share of the duration, with ease-in; the splash takes the rest,
 // turning with a strong ease-out, so it faces the viewer well before it covers the screen.
@@ -167,7 +167,7 @@ export function startLaunch(tile: Element, action: Element, activate: () => bool
         const turnEnd = duration * TURN_SHARE;
         const easing = parseEasing(prop(tile, '--ax-tile-launch-easing')) || EASING;
         const fade = reduced ? 0 : timeOf(tile, '--ax-tile-splash-fade', FADE);
-        const minimum = timeOf(tile, '--ax-tile-splash-min', SPLASH_MIN);
+        const holdTime = timeOf(tile, '--ax-tile-splash-hold', SPLASH_HOLD);
         // `none` waits for as long as it takes: Infinity, and no timer below.
         const parsedTimeout = parseTimeout(prop(tile, '--ax-tile-splash-timeout'));
         const timeout = parsedTimeout === null ? TIMEOUT : parsedTimeout;
@@ -205,14 +205,7 @@ export function startLaunch(tile: Element, action: Element, activate: () => bool
         };
         window.addEventListener('pageshow', onPageShow);
 
-        // When the splash covered the screen: it stays at least `minimum` from then.
-        let coveredAt = 0;
         const fadeOut = () => {
-            const early = coveredAt + minimum - performance.now();
-            if (splash && early > 0) {
-                limit = window.setTimeout(fadeOut, early);
-                return;
-            }
             if (!splash || fade <= 0) return end('done');
             const el = splash;
             const fadeStart = performance.now();
@@ -225,6 +218,12 @@ export function startLaunch(tile: Element, action: Element, activate: () => bool
             step();
         };
 
+        // Everything that held the splash is done: it stays for the hold, then fades.
+        const release = () => {
+            if (holdTime > 0 && splash) limit = window.setTimeout(fadeOut, holdTime);
+            else frame = requestAnimationFrame(fadeOut);
+        };
+
         // The splash stays until the held promises have settled, or until the timeout is over.
         // `navigates`: the browser is leaving the page, so the splash stays until it does (a full page
         // navigation keeps the last frame until the next page paints). It ends at the timeout instead,
@@ -232,7 +231,7 @@ export function startLaunch(tile: Element, action: Element, activate: () => bool
         const holdSplash = (navigates: boolean) => {
             const pending = holds.concat(ready ? [ready] : []);
             if (!pending.length && !navigates) {
-                frame = requestAnimationFrame(fadeOut);
+                release();
                 return;
             }
             let settled = false;
@@ -240,14 +239,13 @@ export function startLaunch(tile: Element, action: Element, activate: () => bool
                 if (settled) return;
                 settled = true;
                 clearTimeout(limit);
-                if (!over) fadeOut();
+                if (!over) release();
             };
             if (isFinite(timeout)) limit = window.setTimeout(settle, timeout);
             if (pending.length) Promise.all(pending.map((p) => p.then(noop, noop))).then(settle);
         };
 
         const activateNow = () => {
-            coveredAt = performance.now();
             tile.dispatchEvent(new CustomEvent('tilelaunchactivate', { bubbles: true, composed: true, detail: { tile, action, url, hold } }));
             const delivered = activate();
             const navigates = delivered && !!url && leavesPage(action, url) && !holds.length && !ready;
