@@ -474,12 +474,9 @@ async function launchChecks() {
     await step('press-launch');
     await wait(100);
     await step('release');
-    const released = performance.now();
-    // As in Windows, the launch waits for the press to spring back.
-    check('launch: the launch waits for the press to spring back', !eventOf('launch', 'tilelaunchstart', mark), 'started at the release');
-    await until(() => !!eventOf('launch', 'tilelaunchstart', mark), 2000);
+    // The launch starts with the click, while the press springs back under the turn.
     const started = eventOf('launch', 'tilelaunchstart', mark);
-    check('launch: then it starts, with the URL of the link', !!started && started.url === href && started.at - released > 30, `url ${started && started.url}, after ${started ? (started.at - released).toFixed(0) : '?'} ms`);
+    check('launch: the click starts the launch at once, with the URL of the link', !!started && started.url === href, `url ${started && started.url}`);
     check('launch: the hash does not change at once', location.hash !== '#launched', location.hash);
     const t0 = started ? started.at : performance.now();
     const box = launch.getBoundingClientRect();
@@ -721,9 +718,6 @@ async function launchKeyboardChecks() {
     await show('launch');
     actionOf('launch').focus();
     await step('down:Enter');
-    await step('up:Enter');
-    // The launch starts once the key press has sprung back.
-    await until(() => !!eventOf('launch', 'tilelaunchstart', mark), 2000);
     const started = eventOf('launch', 'tilelaunchstart', mark);
     check('keyboard: Enter starts the launch with the URL of the link', !!started && started.url === href, `url ${started && started.url}`);
     const t0 = started ? started.at : performance.now();
@@ -731,6 +725,7 @@ async function launchKeyboardChecks() {
     await until(() => performance.now() - t0 >= 0.15 * LAUNCH, 1000);
     const mid = launch.debugState.motion ? launch.debugState.motion.rotateY : undefined;
     check('keyboard: the tile is turning midway through the turn', mid !== undefined && mid > 5 && mid < 85, `rotateY ${mid}`);
+    await step('up:Enter');
     const followed = await until(() => location.hash === '#launched', 2000);
     check('keyboard: the link is followed about one duration after the start', followed >= 0 && Math.abs(followed - t0 - LAUNCH) <= 120, `after ${(followed - t0).toFixed(0)} ms`);
     await until(() => !!eventOf('launch', 'tilelaunchend', mark), 4000);

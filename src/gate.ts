@@ -83,19 +83,14 @@ function activationDelayMax(tile: Element): number | null {
     return parseActivationDelayMax(getComputedStyle(tile).getPropertyValue('--ax-tile-activation-delay-max'));
 }
 
-// Runs `then` once the feedback has finished. A keyboard press is measured a frame later.
-function afterFeedback(tile: Element, keyboard: boolean, then: () => void): void {
+// Sends the held click once the feedback has finished. A keyboard press is measured a frame later.
+function activateAfterFeedback(event: MouseEvent, target: EventTarget, tile: Element, keyboard: boolean): void {
     const wait = (ms: number) => {
         const cap = activationDelayMax(tile);
-        setTimeout(then, Math.max(0, cap === null ? ms : Math.min(ms, cap)));
+        setTimeout(() => replay(event, target, tile), Math.max(0, cap === null ? ms : Math.min(ms, cap)));
     };
     if (keyboard) requestAnimationFrame(() => wait(remainingOf(tile)));
     else wait(remainingOf(tile));
-}
-
-// Sends the held click once the feedback has finished.
-function activateAfterFeedback(event: MouseEvent, target: EventTarget, tile: Element, keyboard: boolean): void {
-    afterFeedback(tile, keyboard, () => replay(event, target, tile));
 }
 
 function onClick(event: MouseEvent): void {
@@ -120,13 +115,10 @@ function onClick(event: MouseEvent): void {
     if (flips(tile)) {
         swallow(event);
         gate.pending.add(tile);
-        // As Windows does, the launch starts once the press has sprung back. Canceled, the click is
-        // sent then, as without a launch.
-        afterFeedback(tile, keyboard, () => {
-            if (!tile.isConnected) return void gate.pending.delete(tile);
-            if (!startLaunch(tile, action, () => replay(event, target, tile), null)) replay(event, target, tile);
-        });
-        return;
+        // The launch starts with the click (the release), while the press springs back under the
+        // turn: waiting for it would break the rhythm. Canceled, it falls back to the delay.
+        if (startLaunch(tile, action, () => replay(event, target, tile), null)) return;
+        return activateAfterFeedback(event, target, tile, keyboard);
     }
 
     // Without a press in progress there is nothing to wait for; a press from the keyboard is measured

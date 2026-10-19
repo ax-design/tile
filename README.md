@@ -116,7 +116,7 @@ With `prefers-reduced-motion: reduce` the tilt takes its end state at once, but 
 
 ## Launch
 
-A click on a tile with `--ax-tile-launch: flip` launches its app, as Windows 8 does. Once the press has sprung back, the tile grows toward the middle of the screen while it turns edge-on; then the splash of the app (its color and its logo) turns to face the viewer while it grows on to the whole page, and stays until the app is ready. The timing follows a 60 fps recording of Windows 8.1. The action runs at the end of the flip:
+A click on a tile with `--ax-tile-launch: flip` launches its app, as Windows 8 does. The tile grows toward the middle of the screen while it turns edge-on; then the splash of the app (its color and its logo) turns to face the viewer while it grows on to the whole page, and stays until the app is ready. The timing follows a 60 fps recording of Windows 8.1. The action runs at the end of the flip:
 
 ```html
 <ax-tile class="app" layers="fill reveal">
@@ -146,7 +146,7 @@ The splash shows the content of the `<template slot="splash">` of the tile, cent
 
 ### The sequence
 
-1. The click is held until the press feedback has finished (the tile springs back), as for the delayed activation. Then the tile dispatches `tilelaunchstart`. A listener may cancel it: the click is then sent on at once, as if the launch were off.
+1. The click starts the launch at once: the press springs back under the turn. The tile dispatches `tilelaunchstart`. A listener may cancel it: the tile then falls back to the delayed activation, as if the launch were off.
 2. Unless a listener called `preventPrefetch()`, a link to the same origin, with no `download` and no other `target`, is prefetched (`<link rel="prefetch">`), once per URL.
 3. One rectangle grows from the tile to the page over the duration. For the first 30% the tile follows it: it is enlarged and moved toward the middle of the screen (`motion()` with `scale`, `x` and `y` of `@ax-design/surface`) while it turns about its vertical axis to edge-on.
 4. Then the splash appears on the same line, edge-on, and turns to face the viewer while it follows the rectangle to the page.
@@ -163,7 +163,7 @@ The three events bubble and cross shadow roots. The `detail` of each has `tile`,
 
 ### From code
 
-`tile.launch(ready?)` runs the same launch as a click does, whatever `--ax-tile-launch` says: calling it is the opt-in. It starts at once, as there is no press to wait for. It dispatches the same events, turns the tile and clicks the action at the end of the flip. `ready` is a promise held as `hold()` would hold it. The returned promise resolves when the splash is gone. It rejects, without doing anything, when the tile has no action, when the action is disabled, or when a launch of the tile is already running. A `tilelaunchstart` that is canceled runs the action at once, with no turn and no splash: the click is dispatched on the action, and the promise resolves after it.
+`tile.launch(ready?)` runs the same launch as a click does, whatever `--ax-tile-launch` says: calling it is the opt-in. It dispatches the same events, turns the tile and clicks the action at the end of the flip. `ready` is a promise held as `hold()` would hold it. The returned promise resolves when the splash is gone. It rejects, without doing anything, when the tile has no action, when the action is disabled, or when a launch of the tile is already running. A `tilelaunchstart` that is canceled runs the action at once, with no turn and no splash: the click is dispatched on the action, and the promise resolves after it.
 
 ```javascript
 const ready = fetch('/api/mail/summary').then((r) => r.json());
