@@ -47,13 +47,17 @@ export class AxTile extends AxSurface {
     // Launches the tile from code, as a click on a tile with --ax-tile-launch: flip does: the events,
     // the flip and the activation of the action (see launch.ts). It runs whatever the tile's
     // --ax-tile-launch says, as calling it is the opt-in. `ready` holds the splash until it settles.
-    // The promise resolves when the splash is gone; a canceled tilelaunchstart resolves it at once,
-    // with nothing launched.
+    // The promise resolves when the splash is gone; a canceled tilelaunchstart activates the action at
+    // once, with no turn, and resolves after that click.
     launch(ready?: Promise<unknown>): Promise<void> {
         const action = this.actionElement();
         if (!action || isDisabled(action)) return Promise.reject(new Error('<ax-tile>.launch(): the tile has no enabled action'));
         if (isLaunching(this)) return Promise.reject(new Error('<ax-tile>.launch(): a launch of this tile is running'));
-        return startLaunch(this, action, () => replay(null, action, this), ready || null) || Promise.resolve();
+        const run = startLaunch(this, action, () => replay(null, action, this), ready || null);
+        if (run) return run;
+        // Canceled: no turn and no splash, and the action runs at once, as there is no press to wait for.
+        replay(null, action, this);
+        return Promise.resolve();
     }
 
     constructor() {

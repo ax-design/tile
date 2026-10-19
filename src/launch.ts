@@ -44,10 +44,10 @@ export function isLaunching(tile: Element): boolean {
 // Sends a click to the target, as a click the browser then acts on (a link navigates, a submit
 // button submits). It is marked as a replay, so that the analytics of the page can skip it. `source`
 // is the click that was held; tile.launch() has none, and the click carries no position.
-export function replay(source: MouseEvent | null, target: EventTarget, tile: Element): void {
+export function replay(source: MouseEvent | null, target: EventTarget, tile: Element): boolean {
     const gate = shared();
     gate.pending.delete(tile);
-    if (!tile.isConnected) return;
+    if (!tile.isConnected) return false;
     const click = new MouseEvent('click', {
         bubbles: true,
         cancelable: true,
@@ -63,7 +63,30 @@ export function replay(source: MouseEvent | null, target: EventTarget, tile: Ele
     });
     (click as MouseEvent & { axReplay?: boolean }).axReplay = true;
     gate.replays.add(click);
-    target.dispatchEvent(click);
+    // False when a listener prevented the click: a router took it.
+    return target.dispatchEvent(click);
+}
+
+// True for a link that the browser navigates to when clicked: an http(s) URL of another document (not a
+// hash of this page), with no download and no other target. A mailto or a javascript link keeps the page.
+function leavesPage(action: Element, url: string): boolean {
+    const target = action.getAttribute('target');
+    if (action.hasAttribute('download') || (target && target !== '_self')) return false;
+    if (!/^https?:/.test(url)) return false;
+    return url.split('#')[0] !== location.href.split('#')[0];
+}
+
+// Whether a color is fully transparent, as the computed background of an element with it is.
+function isTransparent(color: string): boolean {
+    const probe = document.createElement('div');
+    probe.style.backgroundColor = color;
+    document.body.appendChild(probe);
+    const computed = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    const m = /^rgba?\((.*)\)$/.exec(computed);
+    if (!m) return computed === 'transparent';
+    const parts = m[1].split(/[ ,\/]+/).filter(Boolean);
+    return parts.length === 4 && parseFloat(parts[3]) === 0;
 }
 
 // The default prefetch: a link that the browser follows in this window (same origin, no download,
@@ -99,7 +122,7 @@ function makeSplash(color: string, tile: Element): HTMLElement {
 // held click, or the action for tile.launch(). `ready` holds the splash until it has settled.
 // Returns null when tilelaunchstart was canceled, with nothing started: the caller then activates
 // the action as without a launch. Otherwise the promise resolves when the splash is gone.
-export function startLaunch(tile: Element, action: Element, activate: () => void, ready: Promise<unknown> | null): Promise<void> | null {
+export function startLaunch(tile: Element, action: Element, activate: () => boolean, ready: Promise<unknown> | null): Promise<void> | null {
     const gate = shared();
     const url = action.localName === 'a' && action.hasAttribute('href') ? (action as HTMLAnchorElement).href : null;
     const holds: Promise<unknown>[] = [];
@@ -133,7 +156,9 @@ export function startLaunch(tile: Element, action: Element, activate: () => void
         const fade = reduced ? 0 : timeOf(tile, '--ax-tile-splash-fade', FADE);
         const timeout = timeOf(tile, '--ax-tile-splash-timeout', TIMEOUT);
         const forced = appearance().forcedColors;
-        const splashColor = prop(tile, '--ax-tile-splash-color') || (forced ? 'Canvas' : prop(tile, '--ax-fill-color'));
+        // A transparent splash would show the page through the launch: black, as the default of Windows.
+        const resolved = prop(tile, '--ax-tile-splash-color') || (forced ? 'Canvas' : prop(tile, '--ax-fill-color'));
+        const splashColor = isTransparent(resolved) ? 'black' : resolved;
         // The perspective of the splash spans the screen, so that its edges never reach the eye.
         const splashPerspective = Math.max(1000, 4 * Math.max(window.innerWidth, window.innerHeight));
         const perspective = Math.max(1000, 4 * Math.max(from.width, from.height));
@@ -177,9 +202,12 @@ export function startLaunch(tile: Element, action: Element, activate: () => void
         };
 
         // The splash stays until the held promises have settled, or until the timeout is over.
-        const holdSplash = () => {
+        // `navigates`: the browser is leaving the page, so the splash stays until it does (a full page
+        // navigation keeps the last frame until the next page paints). It ends at the timeout instead,
+        // for a navigation that never happens (a 204, a canceled one).
+        const holdSplash = (navigates: boolean) => {
             const pending = holds.concat(ready ? [ready] : []);
-            if (!pending.length) {
+            if (!pending.length && !navigates) {
                 frame = requestAnimationFrame(fadeOut);
                 return;
             }
@@ -191,13 +219,14 @@ export function startLaunch(tile: Element, action: Element, activate: () => void
                 if (!over) fadeOut();
             };
             limit = window.setTimeout(settle, timeout);
-            Promise.all(pending.map((p) => p.then(noop, noop))).then(settle);
+            if (pending.length) Promise.all(pending.map((p) => p.then(noop, noop))).then(settle);
         };
 
         const activateNow = () => {
             tile.dispatchEvent(new CustomEvent('tilelaunchactivate', { bubbles: true, composed: true, detail: { tile, action, url, hold } }));
-            activate();
-            holdSplash();
+            const delivered = activate();
+            const navigates = delivered && !!url && leavesPage(action, url) && !holds.length && !ready;
+            holdSplash(navigates);
         };
 
         // Rectangle of the splash at progress p: the tile's at 0, the screen at 1. The splash is in the
