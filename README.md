@@ -132,12 +132,12 @@ A click on a tile with `--ax-tile-launch: flip` launches its app, as Windows 8 d
 }
 ```
 
-The launch is opt-in: any other value of `--ax-tile-launch` keeps the delayed activation above. The properties are inherited, and read on the tile at each launch:
+The launch is opt-in: any other value of `--ax-tile-launch` keeps the delayed activation above. The keyboard launches too: Enter on the action of a flip tile starts the launch, as a click does. The properties are inherited, and read on the tile at each launch:
 
 * `--ax-tile-launch`: `flip` turns the launch on. Default `none`.
 * `--ax-tile-launch-duration`: a `<time>`, the length of the launch. Default `450ms`. The tile turns in its first 30%; the splash takes the rest.
 * `--ax-tile-launch-easing`: the timing function of the splash, as a CSS timing function (`linear`, `ease`, `cubic-bezier()`...). Default `cubic-bezier(0.1, 0.9, 0.2, 1)`.
-* `--ax-tile-splash-color`: the color of the splash. Default: the fill color of the tile (`--ax-fill-color`), or `Canvas` in forced colors.
+* `--ax-tile-splash-color`: the color of the splash. Default: the fill color of the tile (`--ax-fill-color`), or `Canvas` in forced colors. A transparent color gives a black splash, the default of Windows for an app that declares none.
 * `--ax-tile-splash-fade`: a `<time>`, the fade of the splash once the app is ready. Default `167ms`.
 * `--ax-tile-splash-timeout`: a `<time>`, the longest the splash waits for the promises held (see below). Default `5s`.
 
@@ -150,7 +150,7 @@ The splash shows the content of the `<template slot="splash">` of the tile, cent
 3. For the first 30% of the duration the tile turns about its vertical axis to edge-on.
 4. Then the splash appears, edge-on, and turns to face the viewer while it grows from the rectangle of the tile to the page.
 5. At the end of the duration the tile dispatches `tilelaunchactivate`, then the click is sent on: the link navigates, or the button runs its click. The click is the one the user made, held until now, and it is marked `axReplay`.
-6. The splash stays until every promise passed to `hold()` has settled (or the timeout is over), then it fades out and is removed. The tile turns back, and the tile dispatches `tilelaunchend`.
+6. The splash stays until every promise passed to `hold()` has settled (or the timeout is over), then it fades out and is removed. The tile turns back, and the tile dispatches `tilelaunchend`. A link that the browser navigates to is the exception: when nothing is held and the page has not prevented the click, the splash stays up while the browser leaves the page, and the timeout ends it if the page has not been replaced by then (a `204` response, a download, a page slower than the timeout).
 
 The three events bubble and cross shadow roots. The `detail` of each has `tile`, `action` (the link or the button with `slot="action"`) and `url` (the `href` of a link, `null` for a button):
 
@@ -162,7 +162,7 @@ The three events bubble and cross shadow roots. The `detail` of each has `tile`,
 
 ### From code
 
-`tile.launch(ready?)` runs the same launch as a click does, whatever `--ax-tile-launch` says: calling it is the opt-in. It dispatches the same events, turns the tile and clicks the action at the end of the flip. `ready` is a promise held as `hold()` would hold it. The returned promise resolves when the splash is gone. It rejects, without doing anything, when the tile has no action, when the action is disabled, or when a launch of the tile is already running. A `tilelaunchstart` that is canceled resolves it at once, with nothing launched.
+`tile.launch(ready?)` runs the same launch as a click does, whatever `--ax-tile-launch` says: calling it is the opt-in. It dispatches the same events, turns the tile and clicks the action at the end of the flip. `ready` is a promise held as `hold()` would hold it. The returned promise resolves when the splash is gone. It rejects, without doing anything, when the tile has no action, when the action is disabled, or when a launch of the tile is already running. A `tilelaunchstart` that is canceled runs the action at once, with no turn and no splash: the click is dispatched on the action, and the promise resolves after it.
 
 ```javascript
 const ready = fetch('/api/mail/summary').then((r) => r.json());
@@ -280,7 +280,7 @@ export function LaunchBridge() {
 }
 ```
 
-Plain multi-page sites: nothing to do beyond the default prefetch. The splash has no hold, so it fades a frame after the click; until the new page paints, the browser keeps showing the old one.
+Plain multi-page sites: nothing to do. The default prefetch fetches the page while the tile turns, and the splash stays until the browser leaves the page: the old frame, with the splash on it, is kept until the next page paints. A router that prevents the click, or a hash link, is not a navigation to another document, so its splash goes on the next frame, as above.
 
 ## With tile-group
 
