@@ -57,7 +57,19 @@ Content that you want to click (a button in the content, for example) must be ab
 .above { position: relative; z-index: 2; }
 ```
 
-A tile without an action is static: it has no press feedback and no keyboard handling.
+A tile without an action is static: it has no press feedback and no keyboard handling. The action is how a tile says it does something: only a tile with one is pressed. A tile that runs a script instead of following a link takes a button as its action and listens to its click (the click of the button also reaches the tile):
+
+```html
+<ax-tile layers="fill reveal">
+  <button slot="action" type="button">Shuffle</button>
+</ax-tile>
+```
+
+```javascript
+tile.addEventListener('click', () => shuffle());
+```
+
+A click listener on a tile with no action makes no press: the tile can't tell that it has one, and a keyboard or a screen reader could not reach it either. The button gives it focus, Enter and Space, and its role.
 
 ### Attributes
 
