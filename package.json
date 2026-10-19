@@ -1,0 +1,49 @@
+{
+    "name": "@ax-design/tile",
+    "version": "0.0.0",
+    "description": "Web component that implements the tiles of Axiom Design System: one action per tile, press feedback before the action, and (to come) the motion and the pages of Windows tiles.",
+    "main": "build/main.js",
+    "module": "es/index.js",
+    "typings": "es/index.d.ts",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/ax-design/tile.git"
+    },
+    "license": "MIT",
+    "sideEffects": false,
+    "dependencies": {
+        "@ax-design/surface": "^0.2.4"
+    },
+    "devDependencies": {
+        "@ax-design/reveal-highlight": "^0.6.2",
+        "@types/bun": "latest",
+        "playwright": "^1.64.0",
+        "typescript": "^5.6.0"
+    },
+    "scripts": {
+        "build": "bun scripts/build.ts",
+        "check": "tsc -p tsconfig.json --noEmit",
+        "test": "bun test",
+        "test:browser": "bun test-browser/run.ts",
+        "prepublishOnly": "bun run build"
+    },
+    "homepage": "https://github.com/ax-design/tile#readme",
+    "bugs": {
+        "url": "https://github.com/ax-design/tile/issues"
+    },
+    "files": [
+        "build",
+        "es",
+        "src"
+    ],
+    "exports": {
+        ".": {
+            "types": "./es/index.d.ts",
+            "source": "./src/index.ts",
+            "import": "./es/index.js",
+            "require": "./build/main.js",
+            "default": "./es/index.js"
+        },
+        "./package.json": "./package.json"
+    }
+}
