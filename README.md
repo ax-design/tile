@@ -116,7 +116,7 @@ With `prefers-reduced-motion: reduce` the tilt takes its end state at once, but 
 
 ## Launch
 
-A click on a tile with `--ax-tile-launch: flip` launches its app, as Windows 8 does. The tile turns edge-on; then the splash of the app (its color and its logo) turns to face the viewer while it grows from the tile to the whole page, and stays until the app is ready. The action runs at the end of the flip, not after the press feedback:
+A click on a tile with `--ax-tile-launch: flip` launches its app, as Windows 8 does. Once the press has sprung back, the tile grows toward the middle of the screen while it turns edge-on; then the splash of the app (its color and its logo) turns to face the viewer while it grows on to the whole page, and stays until the app is ready. The timing follows a 60 fps recording of Windows 8.1. The action runs at the end of the flip:
 
 ```html
 <ax-tile class="app" layers="fill reveal">
@@ -135,22 +135,23 @@ A click on a tile with `--ax-tile-launch: flip` launches its app, as Windows 8 d
 The launch is opt-in: any other value of `--ax-tile-launch` keeps the delayed activation above. The keyboard launches too: Enter on the action of a flip tile starts the launch, as a click does. The properties are inherited, and read on the tile at each launch:
 
 * `--ax-tile-launch`: `flip` turns the launch on. Default `none`.
-* `--ax-tile-launch-duration`: a `<time>`, the length of the launch. Default `450ms`. The tile turns in its first 30%; the splash takes the rest.
-* `--ax-tile-launch-easing`: the timing function of the splash, as a CSS timing function (`linear`, `ease`, `cubic-bezier()`...). Default `cubic-bezier(0.1, 0.9, 0.2, 1)`.
+* `--ax-tile-launch-duration`: a `<time>`, the length of the launch, from the tile to the whole page. Default `620ms`. The tile turns in its first 30%; the splash takes the rest.
+* `--ax-tile-launch-easing`: the timing function of the growth from the tile to the page, as a CSS timing function (`linear`, `ease`, `cubic-bezier()`...). Default `cubic-bezier(0.45, 0.4, 0.3, 1)`, fitted to the recording. The turns have their own curves: ease-in to edge-on, and a strong ease-out back to facing the viewer.
 * `--ax-tile-splash-color`: the color of the splash. Default: the fill color of the tile (`--ax-fill-color`), or `Canvas` in forced colors. A transparent color gives a black splash, the default of Windows for an app that declares none.
-* `--ax-tile-splash-fade`: a `<time>`, the fade of the splash once the app is ready. Default `167ms`.
+* `--ax-tile-splash-min`: a `<time>`, the least time the splash stays once it covers the page, as an app takes a moment to show its first frame. Default `250ms`. Without it a fast router would take the splash away the moment it arrives.
+* `--ax-tile-splash-fade`: a `<time>`, the fade of the splash once the app is ready. Default `167ms`, linear, as in the recording.
 * `--ax-tile-splash-timeout`: a `<time>`, the longest the splash waits for the promises held, or for a full-page navigation (see below). Default `5s`. `none` waits for as long as it takes: then a promise that never settles, or a navigation that never happens (a 204, a download), leaves the splash over the page, so hold only promises that settle. A time past about 24.8 days, the longest a browser timer waits, is cut to it.
 
 The splash shows the content of the `<template slot="splash">` of the tile, centered on the color. It is put on the page, not in the tile, and it covers the page while it is there: it takes the pointer.
 
 ### The sequence
 
-1. The tile dispatches `tilelaunchstart`. A listener may cancel it: the tile then falls back to the delayed activation, as if the launch were off.
+1. The click is held until the press feedback has finished (the tile springs back), as for the delayed activation. Then the tile dispatches `tilelaunchstart`. A listener may cancel it: the click is then sent on at once, as if the launch were off.
 2. Unless a listener called `preventPrefetch()`, a link to the same origin, with no `download` and no other `target`, is prefetched (`<link rel="prefetch">`), once per URL.
-3. For the first 30% of the duration the tile turns about its vertical axis to edge-on.
-4. Then the splash appears, edge-on, and turns to face the viewer while it grows from the rectangle of the tile to the page.
+3. One rectangle grows from the tile to the page over the duration. For the first 30% the tile follows it: it is enlarged and moved toward the middle of the screen (`motion()` with `scale`, `x` and `y` of `@ax-design/surface`) while it turns about its vertical axis to edge-on.
+4. Then the splash appears on the same line, edge-on, and turns to face the viewer while it follows the rectangle to the page.
 5. At the end of the duration the tile dispatches `tilelaunchactivate`, then the click is sent on: the link navigates, or the button runs its click. The click is the one the user made, held until now, and it is marked `axReplay`.
-6. The splash stays until every promise passed to `hold()` has settled (or the timeout is over), then it fades out and is removed. The tile turns back, and the tile dispatches `tilelaunchend`. A link that the browser navigates to is the exception: when nothing is held and the page has not prevented the click, the splash stays up while the browser leaves the page, and the timeout ends it if the page has not been replaced by then (a `204` response, a download, a page slower than the timeout).
+6. The splash stays at least `--ax-tile-splash-min`, and until every promise passed to `hold()` has settled (or the timeout is over), then it fades out and is removed. The tile turns back, and the tile dispatches `tilelaunchend`. A link that the browser navigates to is the exception: when nothing is held and the page has not prevented the click, the splash stays up while the browser leaves the page, and the timeout ends it if the page has not been replaced by then (a `204` response, a download, a page slower than the timeout).
 
 The three events bubble and cross shadow roots. The `detail` of each has `tile`, `action` (the link or the button with `slot="action"`) and `url` (the `href` of a link, `null` for a button):
 
@@ -162,7 +163,7 @@ The three events bubble and cross shadow roots. The `detail` of each has `tile`,
 
 ### From code
 
-`tile.launch(ready?)` runs the same launch as a click does, whatever `--ax-tile-launch` says: calling it is the opt-in. It dispatches the same events, turns the tile and clicks the action at the end of the flip. `ready` is a promise held as `hold()` would hold it. The returned promise resolves when the splash is gone. It rejects, without doing anything, when the tile has no action, when the action is disabled, or when a launch of the tile is already running. A `tilelaunchstart` that is canceled runs the action at once, with no turn and no splash: the click is dispatched on the action, and the promise resolves after it.
+`tile.launch(ready?)` runs the same launch as a click does, whatever `--ax-tile-launch` says: calling it is the opt-in. It starts at once, as there is no press to wait for. It dispatches the same events, turns the tile and clicks the action at the end of the flip. `ready` is a promise held as `hold()` would hold it. The returned promise resolves when the splash is gone. It rejects, without doing anything, when the tile has no action, when the action is disabled, or when a launch of the tile is already running. A `tilelaunchstart` that is canceled runs the action at once, with no turn and no splash: the click is dispatched on the action, and the promise resolves after it.
 
 ```javascript
 const ready = fetch('/api/mail/summary').then((r) => r.json());
@@ -175,7 +176,7 @@ When a page is restored from the back/forward cache while a launch runs (`pagesh
 
 ### Reduced motion
 
-With `prefers-reduced-motion: reduce` a flip is not played: the splash covers the page at once, the click is sent on the next frame, and the splash goes without a fade. The events are the same.
+With `prefers-reduced-motion: reduce` a flip is not played: the splash covers the page at once, the click is sent on the next frame, and the splash goes after its least time, without a fade. The events are the same.
 
 ### Routers
 

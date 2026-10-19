@@ -459,6 +459,10 @@ async function launchOnce(id: string): Promise<number> {
 }
 const prefetchesOf = (url: string) => Array.from(document.head.querySelectorAll('link[rel="prefetch"]')).filter((l) => (l as HTMLLinkElement).href === url).length;
 
+// The default duration of the launch, and the least time the splash stays once it covers the screen.
+const LAUNCH = 620;
+const SPLASH_MIN = 250;
+
 async function launchChecks() {
     // 1. A click on a launch tile: the tile turns, the splash comes up, the link is followed at the end
     // of the flip, and the splash goes after its fade.
@@ -470,30 +474,43 @@ async function launchChecks() {
     await step('press-launch');
     await wait(100);
     await step('release');
+    const released = performance.now();
+    // As in Windows, the launch waits for the press to spring back.
+    check('launch: the launch waits for the press to spring back', !eventOf('launch', 'tilelaunchstart', mark), 'started at the release');
+    await until(() => !!eventOf('launch', 'tilelaunchstart', mark), 2000);
     const started = eventOf('launch', 'tilelaunchstart', mark);
-    check('launch: the click starts the launch with the URL of the link', !!started && started.url === href, `url ${started && started.url}`);
+    check('launch: then it starts, with the URL of the link', !!started && started.url === href && started.at - released > 30, `url ${started && started.url}, after ${started ? (started.at - released).toFixed(0) : '?'} ms`);
     check('launch: the hash does not change at once', location.hash !== '#launched', location.hash);
     const t0 = started ? started.at : performance.now();
+    const box = launch.getBoundingClientRect();
     // The turn is under way at 10%: ease-in, so it is still well short of 90 degrees.
-    await until(() => performance.now() - t0 >= 0.1 * 450, 2000);
+    await until(() => performance.now() - t0 >= 0.1 * LAUNCH, 2000);
     const early = launch.debugState.motion ? launch.debugState.motion.rotateY : undefined;
     check('launch: the tile is turning from the start (rotateY between 1 and 45 at 10%)', early !== undefined && early > 1 && early < 45, `rotateY ${early}`);
-    await until(() => performance.now() - t0 >= 0.35 * 450, 2000);
+    // At 20% it has grown and moved toward the middle of the screen, as the recording shows.
+    await until(() => performance.now() - t0 >= 0.2 * LAUNCH, 2000);
+    const m20 = launch.debugState.motion;
+    const toward = (d: number, from: number, middle: number) => (middle - from === 0 ? true : Math.sign(d) === Math.sign(middle - from));
+    check('launch: at 20% the tile has grown and moves toward the middle of the screen', !!m20 && m20.scale > 1.05 && toward(m20.x, box.left + box.width / 2, innerWidth / 2) && toward(m20.y, box.top + box.height / 2, innerHeight / 2), JSON.stringify(m20));
+    await until(() => performance.now() - t0 >= 0.35 * LAUNCH, 2000);
     const rotate = launch.debugState.motion ? launch.debugState.motion.rotateY : undefined;
     check('launch: at 35% the tile is edge-on (rotateY about 90)', rotate !== undefined && Math.abs(rotate - 90) < 3, `rotateY ${rotate}`);
     const splashes = splashesNow();
     const logo = splashes[0] && splashes[0].querySelector('#splash-mark');
     check('launch: at 35% the splash is in the body, in the color of the tile, with a copy of the logo', splashes.length === 1 && getComputedStyle(splashes[0]).backgroundColor === 'rgb(0, 120, 215)' && !!logo && logo.textContent === 'Logo', `splashes ${splashes.length}`);
+    // It goes on from the line of the tile: taller than the tile, not yet the screen.
+    const s35 = splashes[0] ? splashes[0].offsetHeight : 0;
+    check('launch: at 35% the splash is between the tile and the screen in size', s35 > box.height * 1.2 && s35 < innerHeight - 1, `height ${s35}`);
     const followed = await until(() => location.hash === '#launched', 2000);
-    check('launch: the link is followed about one duration after the start', followed >= 0 && Math.abs(followed - t0 - 450) <= 120, `after ${(followed - t0).toFixed(0)} ms`);
+    check('launch: the link is followed about one duration after the start', followed >= 0 && Math.abs(followed - t0 - LAUNCH) <= 120, `after ${(followed - t0).toFixed(0)} ms`);
     await until(() => !!eventOf('launch', 'tilelaunchend', mark), 4000);
     const activate = eventOf('launch', 'tilelaunchactivate', mark);
     const end = eventOf('launch', 'tilelaunchend', mark);
     check('launch: tilelaunchactivate fires while the splash covers the page', !!activate && activate.splashes === 1, `splashes ${activate && activate.splashes}`);
     const r = activate && activate.splash;
     check('launch: the splash covers the screen at the activation', !!r && Math.abs(r.left) < 1 && Math.abs(r.top) < 1 && Math.abs(r.width - innerWidth) < 1 && Math.abs(r.height - innerHeight) < 1, r ? `${r.left},${r.top} ${r.width}x${r.height}` : 'none');
-    check('launch: the splash goes after its fade, and the tile turns back', !!end && end.splashes === 0 && end.motion === null && !!activate && end.at - activate.at >= 140, `after ${end && activate ? (end.at - activate.at).toFixed(0) : '?'} ms`);
-    check('launch: a hash link keeps no hold: the splash goes after its fade', !!activate && !!end && end.at - activate.at < 400, `after ${end && activate ? (end.at - activate.at).toFixed(0) : '?'} ms`);
+    check('launch: the splash stays its least time, then goes after its fade, and the tile turns back', !!end && end.splashes === 0 && end.motion === null && !!activate && end.at - activate.at >= SPLASH_MIN + 140, `after ${end && activate ? (end.at - activate.at).toFixed(0) : '?'} ms`);
+    check('launch: a hash link keeps no other hold', !!activate && !!end && end.at - activate.at < SPLASH_MIN + 400, `after ${end && activate ? (end.at - activate.at).toFixed(0) : '?'} ms`);
     check('launch: tilelaunchend says done, with the URL of the link', !!end && end.reason === 'done' && end.url === href, `reason ${end && end.reason}`);
 
     // 2. The splash waits for a held promise: here 400 ms after the activation.
@@ -667,7 +684,7 @@ async function reducedLaunchChecks() {
     delete tile.motion;
     const a = eventOf('launch', 'tilelaunchactivate', mark);
     const e = eventOf('launch', 'tilelaunchend', mark);
-    check('reduced: the link is followed, and the splash goes without a fade', location.hash === '#launched' && !!a && !!e && e.at - a.at < 100 && e.reason === 'done' && e.splashes === 0, `after ${a && e ? (e.at - a.at).toFixed(0) : '?'} ms`);
+    check('reduced: the link is followed, and the splash goes after its least time, without a fade', location.hash === '#launched' && !!a && !!e && e.at - a.at >= SPLASH_MIN - 20 && e.at - a.at < SPLASH_MIN + 100 && e.reason === 'done' && e.splashes === 0, `after ${a && e ? (e.at - a.at).toFixed(0) : '?'} ms`);
 }
 
 // A launch from a router-like listener, a transparent tile and the keyboard.
@@ -677,7 +694,7 @@ async function launchMoreChecks() {
     const mark = await launchOnce('launch-router');
     const rA = eventOf('launch-router', 'tilelaunchactivate', mark);
     const rE = eventOf('launch-router', 'tilelaunchend', mark);
-    check('router: a prevented click gives no navigation hold; the splash goes after its fade', location.pathname === '/' && !!rA && !!rE && rE.at - rA.at < 400 && rE.reason === 'done', `path ${location.pathname}, after ${rA && rE ? (rE.at - rA.at).toFixed(0) : '?'} ms`);
+    check('router: a prevented click gives no navigation hold; the splash goes after its fade', location.pathname === '/' && !!rA && !!rE && rE.at - rA.at < SPLASH_MIN + 400 && rE.reason === 'done', `path ${location.pathname}, after ${rA && rE ? (rE.at - rA.at).toFixed(0) : '?'} ms`);
 
     // A tile with no fill: the splash is black, not transparent.
     resetHash();
@@ -686,9 +703,10 @@ async function launchMoreChecks() {
     await step('press-launch-dark');
     await wait(100);
     await step('release');
+    await until(() => !!eventOf('launch-dark', 'tilelaunchstart', mark2), 2000);
     const started = eventOf('launch-dark', 'tilelaunchstart', mark2);
     const t0 = started ? started.at : performance.now();
-    await until(() => performance.now() - t0 >= 0.35 * 450, 2000);
+    await until(() => performance.now() - t0 >= 0.35 * LAUNCH, 2000);
     const dark = splashesNow()[0];
     check('splash color: a transparent color gives a black splash', !!dark && getComputedStyle(dark).backgroundColor === 'rgb(0, 0, 0)', dark ? getComputedStyle(dark).backgroundColor : 'no splash');
     await until(() => !!eventOf('launch-dark', 'tilelaunchend', mark2), 4000);
@@ -703,16 +721,18 @@ async function launchKeyboardChecks() {
     await show('launch');
     actionOf('launch').focus();
     await step('down:Enter');
+    await step('up:Enter');
+    // The launch starts once the key press has sprung back.
+    await until(() => !!eventOf('launch', 'tilelaunchstart', mark), 2000);
     const started = eventOf('launch', 'tilelaunchstart', mark);
     check('keyboard: Enter starts the launch with the URL of the link', !!started && started.url === href, `url ${started && started.url}`);
     const t0 = started ? started.at : performance.now();
     // The front half is 30% of the duration; halfway through it the tile has turned part of the way.
-    await until(() => performance.now() - t0 >= 0.15 * 450, 1000);
+    await until(() => performance.now() - t0 >= 0.15 * LAUNCH, 1000);
     const mid = launch.debugState.motion ? launch.debugState.motion.rotateY : undefined;
     check('keyboard: the tile is turning midway through the turn', mid !== undefined && mid > 5 && mid < 85, `rotateY ${mid}`);
-    await step('up:Enter');
     const followed = await until(() => location.hash === '#launched', 2000);
-    check('keyboard: the link is followed about one duration after the start', followed >= 0 && Math.abs(followed - t0 - 450) <= 120, `after ${(followed - t0).toFixed(0)} ms`);
+    check('keyboard: the link is followed about one duration after the start', followed >= 0 && Math.abs(followed - t0 - LAUNCH) <= 120, `after ${(followed - t0).toFixed(0)} ms`);
     await until(() => !!eventOf('launch', 'tilelaunchend', mark), 4000);
     const end = eventOf('launch', 'tilelaunchend', mark);
     check('keyboard: the launch ends as a click launch does', !!end && end.reason === 'done' && end.splashes === 0, `reason ${end && end.reason}`);

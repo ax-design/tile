@@ -1,7 +1,10 @@
-// The launch of a tile (--ax-tile-launch: flip), as Windows 8 starts an app from its tile: the tile
-// turns edge-on, then the splash of the app (its color and logo) turns to face the viewer while it
-// grows from the tile's rectangle to the screen, and stays until the app is ready. The click that
-// starts it is held and sent on once the splash covers the screen. See the README, "Launch".
+// The launch of a tile (--ax-tile-launch: flip), as Windows 8 starts an app from its tile, measured
+// on a 60 fps recording of Windows 8.1: once the press has sprung back, one rectangle grows from the
+// tile to the screen in about 620 ms. The tile turns edge-on in the first 30% of it while it grows
+// toward the middle of the screen, then the splash of the app (its color and logo) turns from
+// edge-on to face the viewer while it takes the rest of the way, and stays until the app is ready.
+// The click that starts it is held and sent on once the splash covers the screen. See the README,
+// "Launch".
 import { appearance, bezierAt, parseEasing } from '@ax-design/surface';
 import type { Bezier, MotionState } from '@ax-design/surface';
 import { parseTime, parseTimeout } from './delay.js';
@@ -13,13 +16,20 @@ interface MotionTile extends Element {
 }
 
 // Defaults of the parameters (see the README).
-const DURATION = 450;
-const EASING: Bezier = [0.1, 0.9, 0.2, 1];
+const DURATION = 620;
+// The growth of the rectangle, fitted to the recording.
+const EASING: Bezier = [0.45, 0.4, 0.3, 1];
 const FADE = 167;
+// The splash stays at least this long once it covers the screen, as an app takes a moment to show
+// its first frame (about 150 to 250 ms in the recording). Without it a fast router would take the
+// splash away the moment it arrives.
+const SPLASH_MIN = 250;
 const TIMEOUT = 5000;
-// The tile turns edge-on in the first share of the duration, with ease-in; the splash takes the rest.
+// The tile turns edge-on in the first share of the duration, with ease-in; the splash takes the rest,
+// turning with a strong ease-out, so it faces the viewer well before it covers the screen.
 const TURN_SHARE = 0.3;
 const TURN_EASING: Bezier = [0.42, 0, 1, 1];
+const SPLASH_TURN_EASING: Bezier = [0.1, 0.9, 0.2, 1];
 
 const noop = () => undefined;
 
@@ -111,8 +121,8 @@ function makeSplash(color: string, tile: Element): HTMLElement {
     const el = document.createElement('div');
     el.setAttribute('aria-hidden', 'true');
     el.style.cssText =
-        'position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; z-index: 2147483647; margin: 0; box-sizing: border-box;' +
-        ` display: flex; align-items: center; justify-content: center; background: ${color}; transform-origin: 0 0;`;
+        'position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; z-index: 2147483647; margin: 0; box-sizing: border-box; overflow: hidden;' +
+        ` display: flex; align-items: center; justify-content: center; background: ${color};`;
     const template = tile.querySelector(':scope > template[slot="splash"]') as HTMLTemplateElement | null;
     if (template) el.appendChild(template.content.cloneNode(true));
     return el;
@@ -154,6 +164,7 @@ export function startLaunch(tile: Element, action: Element, activate: () => bool
         const turnEnd = duration * TURN_SHARE;
         const easing = parseEasing(prop(tile, '--ax-tile-launch-easing')) || EASING;
         const fade = reduced ? 0 : timeOf(tile, '--ax-tile-splash-fade', FADE);
+        const minimum = timeOf(tile, '--ax-tile-splash-min', SPLASH_MIN);
         // `none` waits for as long as it takes: Infinity, and no timer below.
         const parsedTimeout = parseTimeout(prop(tile, '--ax-tile-splash-timeout'));
         const timeout = parsedTimeout === null ? TIMEOUT : parsedTimeout;
@@ -161,9 +172,10 @@ export function startLaunch(tile: Element, action: Element, activate: () => bool
         // A transparent splash would show the page through the launch: black, as the default of Windows.
         const resolved = prop(tile, '--ax-tile-splash-color') || (forced ? 'Canvas' : prop(tile, '--ax-fill-color'));
         const splashColor = isTransparent(resolved) ? 'black' : resolved;
-        // The perspective of the splash spans the screen, so that its edges never reach the eye.
-        const splashPerspective = Math.max(1000, 4 * Math.max(window.innerWidth, window.innerHeight));
+        // The perspective of the tile, in its own px. The splash keeps the same ratio of perspective to
+        // size as it grows, so the turn looks the same on both sides of the swap.
         const perspective = Math.max(1000, 4 * Math.max(from.width, from.height));
+        const depth = perspective / Math.max(1, from.width, from.height);
         const t0 = performance.now();
         let over = false;
         let frame = 0;
@@ -190,7 +202,14 @@ export function startLaunch(tile: Element, action: Element, activate: () => bool
         };
         window.addEventListener('pageshow', onPageShow);
 
+        // When the splash covered the screen: it stays at least `minimum` from then.
+        let coveredAt = 0;
         const fadeOut = () => {
+            const early = coveredAt + minimum - performance.now();
+            if (splash && early > 0) {
+                limit = window.setTimeout(fadeOut, early);
+                return;
+            }
             if (!splash || fade <= 0) return end('done');
             const el = splash;
             const fadeStart = performance.now();
@@ -225,46 +244,67 @@ export function startLaunch(tile: Element, action: Element, activate: () => bool
         };
 
         const activateNow = () => {
+            coveredAt = performance.now();
             tile.dispatchEvent(new CustomEvent('tilelaunchactivate', { bubbles: true, composed: true, detail: { tile, action, url, hold } }));
             const delivered = activate();
             const navigates = delivered && !!url && leavesPage(action, url) && !holds.length && !ready;
             holdSplash(navigates);
         };
 
-        // Rectangle of the splash at progress p: the tile's at 0, the screen at 1. The splash is in the
-        // screen box, scaled and moved with its origin at the top left, and turned about the center.
-        const writeSplash = (el: HTMLElement, p: number) => {
+        // The rectangle at progress q of the growth: the tile's at 0, the screen at 1.
+        const rect = (q: number) => {
             const w = window.innerWidth;
             const h = window.innerHeight;
-            const left = from.left * (1 - p);
-            const top = from.top * (1 - p);
-            const width = from.width + (w - from.width) * p;
-            const height = from.height + (h - from.height) * p;
-            const cx = left + width / 2;
-            const cy = top + height / 2;
-            const angle = -90 * (1 - p);
-            el.style.transform =
-                `translate(${cx}px, ${cy}px) perspective(${splashPerspective}px) rotateY(${angle}deg) translate(${-cx}px, ${-cy}px)` +
-                ` translate(${left}px, ${top}px) scale(${width / w}, ${height / h})`;
+            const left = from.left * (1 - q);
+            const top = from.top * (1 - q);
+            const width = from.width + (w - from.width) * q;
+            const height = from.height + (h - from.height) * q;
+            return { left, top, width, height, cx: left + width / 2, cy: top + height / 2 };
+        };
+        // The tile at progress q, turned by `angle`: scaled to the height of the rectangle and moved to
+        // its middle, outside its perspective, so that edge-on it is a line as tall as the rectangle.
+        const writeTile = (q: number, angle: number, opacity: number) => {
+            const r = rect(q);
+            motion.motion({
+                rotateY: angle,
+                perspective,
+                scale: r.height / Math.max(1, from.height),
+                x: r.cx - (from.left + from.width / 2),
+                y: r.cy - (from.top + from.height / 2),
+                opacity,
+            });
+        };
+        // The splash at progress q, turned by `angle` about its middle. Sized by layout, not scaled,
+        // so its logo keeps its shape.
+        const writeSplash = (el: HTMLElement, q: number, angle: number) => {
+            const r = rect(q);
+            el.style.left = `${r.left}px`;
+            el.style.top = `${r.top}px`;
+            el.style.width = `${r.width}px`;
+            el.style.height = `${r.height}px`;
+            el.style.transform = angle ? `perspective(${depth * Math.max(r.width, r.height)}px) rotateY(${angle}deg)` : '';
         };
 
-        // One frame: the tile turns, then the splash turns and grows, then the click is sent.
+        // One frame: the tile grows and turns edge-on, then the splash takes over from the same line,
+        // turns to face the viewer and grows to the screen, then the click is sent.
         const tick = () => {
             frame = 0;
             if (over) return;
             const elapsed = performance.now() - t0;
+            const q = bezierAt(easing, Math.min(1, elapsed / duration));
             if (elapsed < turnEnd) {
-                motion.motion({ rotateY: 90 * bezierAt(TURN_EASING, elapsed / turnEnd), perspective });
+                writeTile(q, 90 * bezierAt(TURN_EASING, elapsed / turnEnd), 1);
                 frame = requestAnimationFrame(tick);
                 return;
             }
             if (!splash) {
-                // Edge-on, the tile is hidden by the splash from here on.
-                motion.motion({ rotateY: 90, perspective });
+                // Edge-on from here on, and hidden: the splash goes on from its line.
+                writeTile(bezierAt(easing, TURN_SHARE), 90, 0);
                 splash = makeSplash(splashColor, tile);
                 document.body.appendChild(splash);
             }
-            writeSplash(splash, bezierAt(easing, Math.min(1, (elapsed - turnEnd) / (duration - turnEnd))));
+            const back = Math.min(1, (elapsed - turnEnd) / (duration - turnEnd));
+            writeSplash(splash, q, -90 * (1 - bezierAt(SPLASH_TURN_EASING, back)));
             if (elapsed < duration) frame = requestAnimationFrame(tick);
             else activateNow();
         };
