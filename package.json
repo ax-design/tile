@@ -1,6 +1,6 @@
 {
     "name": "@ax-design/tile",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "description": "Web component that implements the tiles of Axiom Design System: one action per tile, press feedback before the action, and (to come) the motion and the pages of Windows tiles.",
     "main": "build/main.js",
     "module": "es/index.js",
@@ -12,7 +12,7 @@
     "license": "MIT",
     "sideEffects": false,
     "dependencies": {
-        "@ax-design/surface": "^0.3.0"
+        "@ax-design/surface": "^0.3.3"
     },
     "devDependencies": {
         "@ax-design/reveal-highlight": "^0.7.0",
