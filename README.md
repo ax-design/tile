@@ -176,7 +176,7 @@ When a page is restored from the back/forward cache while a launch runs (`pagesh
 
 ### Reduced motion
 
-With `prefers-reduced-motion: reduce` a flip is not played: the splash covers the page at once, the click is sent on the next frame, and the splash goes after its least time, without a fade. The events are the same.
+With `prefers-reduced-motion: reduce` a flip is not played: the splash covers the page at once, the click is sent on the next frame, and the splash stays for its hold (`--ax-tile-splash-hold`) once the launch has settled, then goes without a fade. The events are the same.
 
 ### Routers
 
