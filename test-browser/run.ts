@@ -59,6 +59,9 @@ async function playwright(name: string, url: string, reduced = false): Promise<D
     let popups = 0;
     page.context().on('page', () => popups++);
     if (reduced) await page.emulateMedia({ reducedMotion: 'reduce' });
+    page.on('console', (m) => console.log('[console]', m.type(), m.text()));
+    page.on('pageerror', (e) => console.log('[pageerror]', String(e)));
+    page.on('framenavigated', (f) => console.log('[nav]', f.url()));
     await page.goto(url);
     const button = (n: number) => (n === 1 ? 'middle' : n === 2 ? 'right' : 'left');
     return {
