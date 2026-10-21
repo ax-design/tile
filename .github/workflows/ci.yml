@@ -16,7 +16,8 @@ jobs:
       - run: bun run build
       - run: bun test
       - run: bunx playwright install --with-deps chromium firefox webkit
-      - run: xvfb-run -a bun run test:browser chromium firefox webkit
+      - run: bun run test:browser chromium firefox
+      - run: xvfb-run -a bun run test:browser webkit
         env:
           PW_HEADED: '1'
 
