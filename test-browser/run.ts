@@ -54,7 +54,7 @@ interface Driver {
 async function playwright(name: string, url: string, reduced = false): Promise<Driver> {
     const pw = (await import('playwright')) as any;
     const executablePath = process.env.AX_BROWSER_PATH;
-    const browser = await pw[name].launch(executablePath ? { executablePath } : {});
+    const browser = await pw[name].launch({ ...(executablePath ? { executablePath } : {}), headless: !process.env.PW_HEADED });
     const page = await browser.newPage({ viewport: { width: 700, height: 900 } });
     let popups = 0;
     page.context().on('page', () => popups++);
