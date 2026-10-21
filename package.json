@@ -12,7 +12,7 @@
     "license": "MIT",
     "sideEffects": false,
     "dependencies": {
-        "@ax-design/surface": "^0.3.3"
+        "@ax-design/surface": "0.3.0"
     },
     "devDependencies": {
         "@ax-design/reveal-highlight": "^0.7.0",
