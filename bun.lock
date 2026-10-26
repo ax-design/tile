@@ -5,10 +5,10 @@
     "": {
       "name": "@ax-design/tile",
       "dependencies": {
-        "@ax-design/surface": "^0.3.3",
+        "@ax-design/surface": "^0.4.1",
       },
       "devDependencies": {
-        "@ax-design/reveal-highlight": "^0.7.0",
+        "@ax-design/reveal-highlight": "^0.7.1",
         "@types/bun": "latest",
         "playwright": "^1.64.0",
         "typescript": "^5.6.0",
@@ -16,13 +16,13 @@
     },
   },
   "packages": {
-    "@ax-design/reveal-highlight": ["@ax-design/reveal-highlight@0.7.0", "", { "dependencies": { "@ax-design/shape": "^0.3.0", "@ax-design/surface": "^0.3.0", "@ax-design/typed-om": "^0.1.0" } }, "sha512-N38PN1d58SDo+AHdbEWvvQNPFRgBuqlhLO5nLRaBRpFI3OsGApRff296vhZqu0q5KRN+A4nvr2zeFABufUht8g=="],
+    "@ax-design/reveal-highlight": ["@ax-design/reveal-highlight@0.7.2", "", { "dependencies": { "@ax-design/shape": "^0.3.0", "@ax-design/surface": "^0.4.1", "@ax-design/typed-om": "^0.3.0" } }, "sha512-YGE6t+RK16Jo9UZbCCzp4vI0sIMpbjg+uLl7h30QLODaS4fMZ38gMp1Iyk/jg36kEfvGGZjGtuTDkH+CUyAdww=="],
 
     "@ax-design/shape": ["@ax-design/shape@0.3.0", "", {}, "sha512-rvIpp8dSu7XI1VAFvll+Cl8IND1SALXSByGTFeCj6uY9IKdyt3uT2hnmbMp4F4t5dC0ot/Fe/WDvIUwzwYOWww=="],
 
-    "@ax-design/surface": ["@ax-design/surface@0.3.3", "", { "dependencies": { "@ax-design/shape": "^0.3.0", "@ax-design/typed-om": "^0.1.0" } }, "sha512-O+q1Ayr1R4XUpHd9QCfnzve+xp6DXc7wHZO5f9Yfin0LPfHQRaJBPWSyRDOOOI6NRFwaGJylbkomJKFKYJQ92g=="],
+    "@ax-design/surface": ["@ax-design/surface@0.4.1", "", { "dependencies": { "@ax-design/shape": "^0.3.0", "@ax-design/typed-om": "^0.3.0" } }, "sha512-CzNUjd9VO3nXPrhre19C4BgQtyovnv0sBNRzCkNTnrQoQjaQ/fN3tUTfBj+yPwEFseQ/AC864X5GT3trzMjGcQ=="],
 
-    "@ax-design/typed-om": ["@ax-design/typed-om@0.1.0", "", {}, "sha512-v3I8wDLMFbWDN9cZkDpy9qYonMQfqUU0DIL9DOChTO3dBRzWUk/taZZBUgmNTkA0kvn+g5NbB7pGcSuQAbz9cA=="],
+    "@ax-design/typed-om": ["@ax-design/typed-om@0.3.0", "", {}, "sha512-zNLME1sVQ/v7fqiIPDoz/2/d2cdkHi1bQhR2opOxZSaIkTSVjet8k9gpUCuNeZhazElWGkqO1yAaf9kH+TIddg=="],
 
     "@types/bun": ["@types/bun@1.4.3", "", { "dependencies": { "bun-types": "1.4.3" } }, "sha512-N67Pqy8JXbAY/j0tNraS3V5mubGvc6rrrNDmDCtZLlFzccbUJPDb0tvgUBC5q4m8ybkP93Jcn1QB+RYQ6PvBhw=="],
 
